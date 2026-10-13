@@ -26,10 +26,12 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* display=block is deliberate: text must not reflow after swap. */}
-        {/* eslint-disable-next-line @next/next/google-font-display, @next/next/no-page-custom-font */}
+        {/* display=swap: a chat app must never render a blank screen while a
+            webfont is in flight. The hero used block to avoid reflow, but
+            that failure mode is far worse here. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&display=block"
+          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Instrument+Serif:ital@0;1&display=swap"
           rel="stylesheet"
         />
       </head>

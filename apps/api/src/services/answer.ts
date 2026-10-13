@@ -23,6 +23,8 @@ export interface AnswerRequest {
   readyAttachments: Array<{ attachment: Attachment; text: string }>;
   /** Memories retrieved for this turn. */
   memories: StudyMemory[];
+  /** Prior conversation turns for multi-turn contextual continuity. */
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 export interface AnswerChunk {

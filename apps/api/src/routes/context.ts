@@ -54,6 +54,8 @@ export function contextRouter(repo: Repository): Router {
   return r;
 }
 
+import { falkorContext } from "../services/falkordb.js";
+
 /**
  * Mounted at /api/memories, which is where the frontend looks. A memory is
  * addressable on its own, not only through a conversation.
@@ -71,7 +73,11 @@ export function memoriesRouter(repo: Repository): Router {
   r.delete(
     "/:id",
     asyncRoute(async (req, res) => {
-      const ok = await repo.deleteMemory(param(req, "id"));
+      const memoryId = param(req, "id");
+      const ok = await repo.deleteMemory(memoryId);
+      if (falkorContext.isConnected) {
+        await falkorContext.deleteMemory(memoryId);
+      }
       if (!ok) throw new HttpError(404, "not_found", "Memory not found.");
       res.status(204).end();
     }),

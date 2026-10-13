@@ -5,12 +5,15 @@ import { PgRepository } from "./db/pg-repository.js";
 import { MemoryRepository } from "./db/memory-repository.js";
 import type { Repository } from "./db/repository.js";
 import { LocalAnswerProvider } from "./services/answer.js";
+import { OllamaAnswerProvider } from "./services/ollama.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { messagesRouter } from "./routes/messages.js";
 import { uploadsRouter } from "./routes/uploads.js";
 import { contextRouter, feedbackRouter, memoriesRouter } from "./routes/context.js";
 import { errorHandler, notFound } from "./routes/helpers.js";
 import { ensureDir } from "./services/files.js";
+
+import { falkorContext } from "./services/falkordb.js";
 
 function buildRepo(): Repository {
   return config.usingMemoryStore
@@ -22,9 +25,11 @@ export async function createApp() {
   const repo = buildRepo();
   await repo.init();
   await ensureDir(config.uploadDir);
+  await falkorContext.init();
 
-  // Swap this for a model-backed provider. It must stay server-side.
-  const provider = new LocalAnswerProvider();
+  // Ollama local LLM provider (qwen2.5:1.5b) with graceful auto-fallback
+  const ollamaProvider = new OllamaAnswerProvider();
+  const provider = ollamaProvider;
 
   const app = express();
 
@@ -62,10 +67,23 @@ export async function createApp() {
   }
 
   app.get("/health", async (_req, res) => {
+    const ollamaStatus = await ollamaProvider.checkHealth();
     res.json({
       ok: true,
       store: repo.kind,
       answerProvider: provider.name,
+      ollama: {
+        configuredModel: config.ollamaModel,
+        baseUrl: config.ollamaBaseUrl,
+        online: ollamaStatus.online,
+        hasModel: ollamaStatus.hasModel,
+        availableModels: ollamaStatus.models,
+        status: ollamaStatus.online
+          ? (ollamaStatus.hasModel ? "ready" : `model_${config.ollamaModel}_not_found`)
+          : "offline_waiting_for_daemon",
+      },
+      contextStore: falkorContext.isConnected ? "falkordb" : "in-memory-fallback",
+      falkorGraph: falkorContext.isConnected ? falkorContext.graphName : null,
       persistence: repo.kind === "postgres" ? "postgres" : "in-memory (set DATABASE_URL to persist)",
     });
   });
@@ -87,10 +105,14 @@ const isMain = process.argv[1]?.endsWith("server.ts") || process.argv[1]?.endsWi
 
 if (isMain) {
   createApp()
-    .then(({ app, repo }) => {
+    .then(async ({ app, repo }) => {
+      const ollama = new OllamaAnswerProvider();
+      const health = await ollama.checkHealth();
       app.listen(config.port, () => {
         console.log(`[api] RecallAI listening on http://localhost:${config.port}`);
         console.log(`[api] store: ${repo.kind}`);
+        console.log(`[api] context: ${falkorContext.isConnected ? `falkordb ('${falkorContext.graphName}')` : "in-memory-fallback"}`);
+        console.log(`[api] llm: ollama ('${config.ollamaModel}' at ${config.ollamaBaseUrl}) -> ${health.online ? (health.hasModel ? "READY" : "ONLINE (pull model: ollama run " + config.ollamaModel + ")") : "WAITING (start local daemon when ready: ollama run " + config.ollamaModel + ")"}`);
         if (repo.kind === "memory") {
           console.log("[api] DATABASE_URL is empty — history will not survive a restart.");
         }

@@ -40,8 +40,7 @@ export function BrandMark({ size = 34 }: { size?: number }) {
 }
 
 /** Click-outside + Escape handling for menus and dialogs. */
-function useDismiss(open: boolean, close: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
+function useDismiss(open: boolean, close: () => void) {  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -57,6 +56,45 @@ function useDismiss(open: boolean, close: () => void) {
       document.removeEventListener("keydown", onKey);
     };
   }, [open, close]);
+  return ref;
+}
+
+/**
+ * Keeps Tab inside a modal dialog and returns focus to whatever opened it.
+ * Both dialogs mount only while open, so mount/unmount is the trap lifetime.
+ */
+function useFocusTrap() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !el) return;
+      const focusables = [
+        ...el.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ];
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
   return ref;
 }
 
@@ -357,6 +395,7 @@ export function RenameDialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
+  const trapRef = useFocusTrap();
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
@@ -372,7 +411,7 @@ export function RenameDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog">
+      <div className="dialog" ref={trapRef}>
         <h2>Rename conversation</h2>
         <p>Use a title you will recognise in the history list.</p>
         <input
@@ -413,6 +452,7 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
+  const trapRef = useFocusTrap();
   useEffect(() => {
     ref.current?.focus();
   }, []);
@@ -427,7 +467,7 @@ export function ConfirmDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog">
+      <div className="dialog" ref={trapRef}>
         <h2>{title}</h2>
         <p>{body}</p>
         <div className="dialog-actions">

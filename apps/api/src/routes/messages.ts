@@ -64,7 +64,12 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
 
     const { items, note } = await retrieveMemories(repo, body.content);
 
-    return { conv, userMessage, attachments, readyAttachments, memories: items, note };
+    const allMessages = await repo.listMessages(conversationId);
+    const history = allMessages
+      .filter((m) => m.id !== userMessage.id && m.status === "complete")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+    return { conv, userMessage, attachments, readyAttachments, memories: items, note, history };
   }
 
   /* ------------------------------------------------------------------ */
@@ -96,6 +101,7 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
           attachments: turn.attachments as never,
           readyAttachments: turn.readyAttachments as never,
           memories: turn.memories,
+          history: turn.history,
         },
         new AbortController().signal,
       )) {
@@ -173,6 +179,7 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
           attachments: turn.attachments as never,
           readyAttachments: turn.readyAttachments as never,
           memories: turn.memories,
+          history: turn.history,
         },
         controller.signal,
       )) {

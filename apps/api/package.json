@@ -8,12 +8,14 @@
     "build": "tsc --noEmit",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsx test/falkordb.test.ts",
     "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
     "@recallai/shared-types": "*",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "falkordb": "^6.8.0",
     "multer": "^2.0.1",
     "pg": "^8.13.1",
     "tsx": "^4.19.2",

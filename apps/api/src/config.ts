@@ -52,6 +52,31 @@ export const config = {
   get usingMemoryStore() {
     return this.databaseUrl.length === 0;
   },
+
+  /* ------------------------------------------------------------------ */
+  /* FalkorDB Graph Context Database                                    */
+  /* ------------------------------------------------------------------ */
+  falkordbUrl: (process.env.FALKORDB_URL ?? "").trim(),
+  falkordbHost: (process.env.FALKORDB_HOST ?? "").trim(),
+  falkordbPort: Number(process.env.FALKORDB_PORT ?? 6379),
+  falkordbUsername: (process.env.FALKORDB_USERNAME ?? "default").trim(),
+  falkordbPassword: (process.env.FALKORDB_PASSWORD ?? "").trim(),
+  falkordbGraph: (process.env.FALKORDB_GRAPH ?? "recallai_study_graph").trim(),
+  falkordbTls: bool("FALKORDB_TLS", false),
+
+  /** True when FalkorDB credentials or host have been configured. */
+  get hasFalkorDB() {
+    return Boolean(this.falkordbUrl || this.falkordbHost);
+  },
+
+  /* ------------------------------------------------------------------ */
+  /* Ollama Local LLM Configuration                                     */
+  /* ------------------------------------------------------------------ */
+  ollamaBaseUrl: (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/+$/, "").trim(),
+  ollamaModel: (process.env.OLLAMA_MODEL ?? "qwen2.5:1.5b").trim(),
+  ollamaEnabled: bool("OLLAMA_ENABLED", true),
+  ollamaTemperature: Number(process.env.OLLAMA_TEMPERATURE ?? 0.7),
+  ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000),
 } as const;
 
 export type Config = typeof config;

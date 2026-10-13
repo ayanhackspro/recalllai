@@ -1,13 +1,15 @@
 /* ============================================================
    RecallAI — design tokens
    Visual language carried over from the Fastshot hero:
-   dark stage, glass panels, warm accent, Inter variable.
+   dark stage, glass panels, warm accent.
+   Type: Instrument Serif for display titles, Bricolage Grotesque for body.
    Light mode is defined here only; no component reads raw colors.
    ============================================================ */
 
 :root {
-  --font-text: Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  --font-text: "Bricolage Grotesque", Inter, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
 
   /* Brand accent — warm, carried from the reference send button */
   --accent-100: #fbbc94;

@@ -9,6 +9,7 @@ import {
   Target,
 } from "lucide-react";
 import { useApp } from "@/store/AppStore";
+import { USING_MOCK } from "@/lib/api";
 
 const STARTERS = [
   {
@@ -39,7 +40,7 @@ const STARTERS = [
 ];
 
 export function WelcomeScreen() {
-  const { state, setDraft, setResponseMode, toggleContext, newConversation } = useApp();
+  const { state, setDraft, setResponseMode, toggleContext } = useApp();
   const [started, setStarted] = useState(false);
 
   /**
@@ -63,29 +64,26 @@ export function WelcomeScreen() {
       <div className="welcome-inner rise">
         <h2>A study companion that remembers.</h2>
         <p>
-          Ask a question, attach your notes or a photo of a problem. Useful goals,
-          topics and recurring mistakes get recorded, and shape later answers —
-          with the reason shown in plain language.
+          Ask a question or attach your notes. Goals, topics and recurring
+          mistakes get recorded, and shape later answers.
         </p>
 
-        {hasGoal && !started && (
-          <button
-            type="button"
-            className="starter"
-            style={{ gridColumn: "1 / -1", justifyContent: "center" }}
-            onClick={() => applyPrompt("Where should I pick up next?")}
-          >
-            <BrainCircuit size={16} />
-            <span className="starter-text">
-              <span className="starter-title">Continue studying</span>
-              <span className="starter-sub">
-                Based on your recorded goal and what you last got wrong
-              </span>
-            </span>
-          </button>
-        )}
-
         <div className="starters">
+          {hasGoal && !started && (
+            <button
+              type="button"
+              className="starter starter-wide"
+              onClick={() => applyPrompt("Where should I pick up next?")}
+            >
+              <BrainCircuit size={17} />
+              <span className="starter-text">
+                <span className="starter-title">Continue studying</span>
+                <span className="starter-sub">
+                  Picks up from your goal and what you last got wrong
+                </span>
+              </span>
+            </button>
+          )}
           {STARTERS.map((s) => (
             <button
               key={s.title}
@@ -102,33 +100,19 @@ export function WelcomeScreen() {
           ))}
         </div>
 
-        <p className="demo-note">
-          <strong>Running on sample data.</strong> Seeded conversations and the{" "}
-          <span className="badge-demo">demo</span> memory record are fixtures for
-          previewing the interface — connect the backend to see your own.
-          {!state.activeId && (
-            <>
-              {" "}
-              <button
-                type="button"
-                onClick={() => void newConversation()}
-                style={{ textDecoration: "underline", cursor: "pointer" }}
-              >
-                Start a conversation
-              </button>
-            </>
-          )}
-        </p>
-
-        <button
-          type="button"
-          className="btn"
-          data-variant="ghost"
-          onClick={() => toggleContext(true)}
-        >
-          <BrainCircuit size={14} style={{ marginRight: 7 }} />
-          What RecallAI remembers
-        </button>
+        {USING_MOCK && (
+          <p className="demo-note">
+            <strong>Sample data.</strong> Seeded conversations and the{" "}
+            <span className="badge-demo">demo</span> memory are fixtures.{" "}
+            <button
+              type="button"
+              onClick={() => toggleContext(true)}
+              style={{ textDecoration: "underline", cursor: "pointer" }}
+            >
+              See what RecallAI remembers
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

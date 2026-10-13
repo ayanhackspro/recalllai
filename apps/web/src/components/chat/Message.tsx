@@ -25,9 +25,9 @@ export function MemoryList({ items, onRemove }: { items: StudyMemory[]; onRemove
   return (
     <div className="context-list">
       {items.map((m) => (
-        <div key={m.id} className="memory">
+        <div key={m.id} className="memory" data-type={m.type}>
           <div className="memory-top">
-            <span className="tag">{m.type.replace("_", " ")}</span>
+            <span className="tag" data-type={m.type}>{m.type.replace("_", " ")}</span>
             <span className="memory-when">{m.label}</span>
             {m.source === "demo" && <span className="badge-demo">demo</span>}
             <div style={{ flex: 1 }} />

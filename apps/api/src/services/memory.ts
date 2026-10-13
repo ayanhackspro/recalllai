@@ -1,16 +1,20 @@
 import type { StudyMemory } from "@recallai/shared-types";
 import { keywordsOf, type Repository } from "../db/repository.js";
+import { falkorContext, type FalkorContextService } from "./falkordb.js";
 
 /**
  * Memory retrieval and recording.
  *
- * Retrieval is keyword overlap over a `keywords text[]` column with a GIN
- * index — deliberately simple and inspectable. This is the seam where the
- * graph-backed service described in the spec drops in: replace
- * `retrieveMemories` with a FalkorDB query and the routes do not change.
+ * Backed by FalkorDB graph traversal when configured. Traverses concept
+ * relationships (e.g. Inclined Plane -> Net Force -> Recurring Mistake) to
+ * find deep semantic connections and explain them in plain language.
  *
- * What this module will never do is invent memory. It only returns rows that
- * already exist, and it returns nothing rather than guessing.
+ * If FalkorDB is not configured or offline, seamlessly falls back to keyword
+ * overlap over the repository's `keywords text[]` column so the app remains
+ * fully operational.
+ *
+ * What this module will never do is invent memory. It only returns items that
+ * actually exist in the graph/store, and returns nothing rather than guessing.
  */
 
 /** Stop words excluded before matching, kept small and shared with keywordsOf. */
@@ -50,7 +54,17 @@ export async function retrieveMemories(
   repo: Repository,
   query: string,
   limit = 4,
+  falkor: FalkorContextService = falkorContext,
 ): Promise<{ items: StudyMemory[]; note?: string }> {
+  // 1. Primary: FalkorDB Graph traversal
+  if (falkor.isConnected) {
+    const graphResult = await falkor.retrieveContext(query, limit);
+    if (graphResult.items.length > 0) {
+      return { items: graphResult.items, note: graphResult.note };
+    }
+  }
+
+  // 2. Secondary fallback: Repository keyword search
   const keywords = keywordsOf(query);
   if (keywords.length === 0) return { items: [] };
 
@@ -77,6 +91,7 @@ export async function retrieveMemories(
 export async function maybeRecordMemory(
   repo: Repository,
   input: { conversationId: string; messageId: string; text: string },
+  falkor: FalkorContextService = falkorContext,
 ): Promise<StudyMemory | null> {
   const { text } = input;
 
@@ -89,7 +104,7 @@ export async function maybeRecordMemory(
     // store the useless subject "this wrong".
     const subject = mistake[1]!.replace(/^\s*(?:this|that|it|them)\s+/i, "").trim();
     if (subject) {
-      return repo.upsertMemory({
+      const memory = await repo.upsertMemory({
         type: "mistake",
         label: "Recurring mistake",
         summary: `You reported repeatedly getting this wrong: ${subject}.`,
@@ -98,6 +113,16 @@ export async function maybeRecordMemory(
         messageId: input.messageId,
         keywords: keywordsOf(subject),
       });
+
+      if (falkor.isConnected) {
+        await falkor.upsertMemory(memory, {
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          keywords: keywordsOf(subject),
+        });
+      }
+
+      return memory;
     }
   }
 
@@ -108,7 +133,7 @@ export async function maybeRecordMemory(
   if (goal) {
     const subject = (goal[1] ?? goal[0] ?? "").replace(/\b(my|the)\b/gi, "").trim();
     if (subject) {
-      return repo.upsertMemory({
+      const memory = await repo.upsertMemory({
         type: "goal",
         label: "Current study goal",
         summary: `You said you are studying for ${subject}.`,
@@ -117,6 +142,16 @@ export async function maybeRecordMemory(
         messageId: input.messageId,
         keywords: keywordsOf(subject),
       });
+
+      if (falkor.isConnected) {
+        await falkor.upsertMemory(memory, {
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          keywords: keywordsOf(subject),
+        });
+      }
+
+      return memory;
     }
   }
 
