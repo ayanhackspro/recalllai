@@ -277,6 +277,77 @@ export class MemoryRepository implements Repository {
 
   /* ------------------------------- memories ---------------------------- */
 
+  async getMemory(id: string): Promise<StudyMemory | null> {
+    const memory = this.memories.get(id);
+    return memory ? { ...memory } : null;
+  }
+
+  async listDueMemories(limit = 20): Promise<StudyMemory[]> {
+    const now = Date.now();
+    return [...this.memories.values()]
+      .filter((m) => {
+        if (!m.nextReviewAt) return true;
+        return new Date(m.nextReviewAt).getTime() <= now;
+      })
+      .sort((a, b) => {
+        const aDue = a.nextReviewAt ? new Date(a.nextReviewAt).getTime() : 0;
+        const bDue = b.nextReviewAt ? new Date(b.nextReviewAt).getTime() : 0;
+        if (aDue !== bDue) return aDue - bDue;
+        return (a.masteryScore ?? 0) - (b.masteryScore ?? 0);
+      })
+      .slice(0, limit);
+  }
+
+  async reviewMemory(id: string, rating: 1 | 2 | 3 | 4 | 5): Promise<StudyMemory | null> {
+    const memory = this.memories.get(id);
+    if (!memory) return null;
+
+    const repCount = memory.repetitionCount ?? 0;
+    const intervalDays = memory.intervalDays ?? 0;
+    const easeFactor = memory.easeFactor ?? 2.5;
+    const masteryScore = memory.masteryScore ?? 0;
+
+    // SuperMemo-2 (SM-2) algorithm
+    const newEaseFactor = Math.max(
+      1.3,
+      Number((easeFactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02))).toFixed(3)),
+    );
+
+    let newRepCount = repCount;
+    let newIntervalDays = intervalDays;
+    let newMasteryScore = masteryScore;
+
+    if (rating < 3) {
+      newRepCount = 0;
+      newIntervalDays = 1;
+      newMasteryScore = Math.max(0, Math.round(masteryScore * 0.7 - (3 - rating) * 10));
+    } else {
+      if (repCount === 0) {
+        newIntervalDays = 1;
+      } else if (repCount === 1) {
+        newIntervalDays = 3;
+      } else {
+        newIntervalDays = Math.max(1, Math.round(intervalDays * newEaseFactor));
+      }
+      newRepCount = repCount + 1;
+
+      const masteryBonus = rating === 5 ? 25 : rating === 4 ? 15 : 8;
+      newMasteryScore = Math.min(100, masteryScore + masteryBonus);
+    }
+
+    const nextReview = new Date(Date.now() + newIntervalDays * 86_400_000);
+
+    memory.repetitionCount = newRepCount;
+    memory.intervalDays = newIntervalDays;
+    memory.easeFactor = newEaseFactor;
+    memory.masteryScore = newMasteryScore;
+    memory.nextReviewAt = nextReview.toISOString();
+    memory.updatedAt = nowIso();
+
+    this.save();
+    return { ...memory };
+  }
+
   async listMemories(conversationId?: string): Promise<StudyMemory[]> {
     return [...this.memories.values()]
       .filter((m) => !conversationId || m.conversationId === conversationId)
@@ -306,6 +377,10 @@ export class MemoryRepository implements Repository {
       label: value.label,
       summary: value.summary,
       source: value.source ?? "learned",
+      masteryScore: 0,
+      repetitionCount: 0,
+      intervalDays: 0,
+      easeFactor: 2.5,
       updatedAt: nowIso(),
       conversationId: value.conversationId,
       messageId: value.messageId,

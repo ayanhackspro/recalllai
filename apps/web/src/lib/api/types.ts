@@ -40,6 +40,8 @@ export interface RecallApi {
 
   getStudyContext(conversationId: string, signal?: AbortSignal): Promise<StudyContext>;
   removeMemory(id: string): Promise<void>;
+  listDueMemories?(limit?: number): Promise<StudyMemory[]>;
+  reviewMemory?(id: string, rating: 1 | 2 | 3 | 4 | 5): Promise<import("@recallai/shared-types").MemoryReviewResponse>;
 
   submitFeedback(messageId: string, feedback: MessageFeedback): Promise<void>;
   renameMemory?(id: string, summary: string): Promise<StudyMemory>;

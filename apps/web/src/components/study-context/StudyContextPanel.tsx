@@ -6,10 +6,13 @@ import { MemoryList } from "@/components/chat/Message";
 import { relativeTime } from "@/lib/time";
 
 export function StudyContextPanel() {
-  const { state, toggleContext, refreshContext, removeMemory } = useApp();
+  const { state, toggleContext, refreshContext, removeMemory, reviewMemory } = useApp();
   const { items, note, loading, error } = state.context;
 
   const hasDemo = items.some((m) => m.source === "demo");
+  const dueItems = items.filter(
+    (m) => !m.nextReviewAt || new Date(m.nextReviewAt).getTime() <= Date.now(),
+  );
 
   return (
     <aside className="context" aria-label="Study context">
@@ -39,6 +42,12 @@ export function StudyContextPanel() {
 
       {note && <p className="context-note">{note}</p>}
 
+      {dueItems.length > 0 && !loading && (
+        <div className="retention-alert">
+          <span>{dueItems.length} concept{dueItems.length > 1 ? "s" : ""} due for spaced repetition review</span>
+        </div>
+      )}
+
       <div className="context-list scroll">
         {loading ? (
           <>
@@ -56,7 +65,7 @@ export function StudyContextPanel() {
             mattered.
           </p>
         ) : (
-          <MemoryList items={items} onRemove={removeMemory} />
+          <MemoryList items={items} onRemove={removeMemory} onReview={reviewMemory} />
         )}
       </div>
 

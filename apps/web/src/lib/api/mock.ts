@@ -557,6 +557,35 @@ class MockApi implements RecallApi {
     this.memories = this.memories.filter((m) => m.id !== id);
   }
 
+  async listDueMemories(limit = 20) {
+    return this.memories.slice(0, limit);
+  }
+
+  async reviewMemory(id: string, rating: 1 | 2 | 3 | 4 | 5) {
+    const mem = this.memories.find((m) => m.id === id);
+    const newMastery = Math.min(100, (mem?.masteryScore ?? 0) + (rating >= 3 ? 15 : -10));
+    const nextReview = new Date(Date.now() + 864e5 * 3).toISOString();
+    if (mem) {
+      mem.masteryScore = newMastery;
+      mem.repetitionCount = (mem.repetitionCount ?? 0) + 1;
+      mem.nextReviewAt = nextReview;
+    }
+    return {
+      memory: mem ?? {
+        id,
+        type: "topic" as const,
+        label: "Reviewed topic",
+        summary: "Memory item",
+        source: "learned" as const,
+        masteryScore: newMastery,
+      },
+      rating,
+      nextReviewAt: nextReview,
+      intervalDays: 3,
+      masteryScore: newMastery,
+    };
+  }
+
   async submitFeedback(messageId: string, feedback: MessageFeedback) {
     void messageId;
     void feedback;

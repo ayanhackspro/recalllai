@@ -211,6 +211,20 @@ export class HttpApi implements RecallApi {
     return this.request<void>(`/api/memories/${id}`, { method: "DELETE" });
   }
 
+  listDueMemories(limit = 20) {
+    return this.request<import("@recallai/shared-types").StudyMemory[]>(`/api/memories/due?limit=${limit}`);
+  }
+
+  reviewMemory(id: string, rating: 1 | 2 | 3 | 4 | 5) {
+    return this.request<import("@recallai/shared-types").MemoryReviewResponse>(
+      `/api/memories/${id}/review`,
+      {
+        method: "POST",
+        body: JSON.stringify({ rating }),
+      },
+    );
+  }
+
   submitFeedback(messageId: string, feedback: MessageFeedback) {
     return this.request<void>(`/api/messages/${messageId}/feedback`, {
       method: "POST",

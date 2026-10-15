@@ -118,12 +118,31 @@ export function contextRouter(repo: Repository): Router {
   return r;
 }
 
+const reviewSchema = z.object({
+  rating: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+  ]),
+});
+
 /**
  * Mounted at /api/memories, which is where the frontend looks. A memory is
  * addressable on its own, not only through a conversation.
  */
 export function memoriesRouter(repo: Repository): Router {
   const r = Router();
+
+  r.get(
+    "/due",
+    asyncRoute(async (req, res) => {
+      const limit = req.query.limit ? Math.min(100, Math.max(1, Number(req.query.limit))) : 20;
+      const due = await repo.listDueMemories(limit);
+      res.json(due);
+    }),
+  );
 
   r.get(
     "/",
@@ -136,6 +155,38 @@ export function memoriesRouter(repo: Repository): Router {
         }
       }
       res.json(await repo.listMemories());
+    }),
+  );
+
+  r.get(
+    "/:id",
+    asyncRoute(async (req, res) => {
+      const memoryId = param(req, "id");
+      const mem = await repo.getMemory(memoryId);
+      if (!mem) throw new HttpError(404, "not_found", "Memory not found.");
+      res.json(mem);
+    }),
+  );
+
+  r.post(
+    "/:id/review",
+    asyncRoute(async (req, res) => {
+      const memoryId = param(req, "id");
+      const body = reviewSchema.parse(req.body);
+      const updated = await repo.reviewMemory(memoryId, body.rating);
+      if (!updated) throw new HttpError(404, "not_found", "Memory not found.");
+
+      if (falkorContext.isConnected) {
+        await falkorContext.upsertMemory(updated);
+      }
+
+      res.json({
+        memory: updated,
+        rating: body.rating,
+        nextReviewAt: updated.nextReviewAt,
+        intervalDays: updated.intervalDays,
+        masteryScore: updated.masteryScore,
+      });
     }),
   );
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Menu, Pencil, Trash2 } from "lucide-react";
+import { Brain, Download, Menu, Pencil, Trash2 } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 
 export function ConversationHeader() {
@@ -15,6 +15,52 @@ export function ConversationHeader() {
     : state.generation === "error"
       ? { tone: "error", label: "Last answer failed" }
       : { tone: "idle", label: "Ready" };
+
+  const exportNotes = () => {
+    if (!active) return;
+    const dateStr = new Date().toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const lines: string[] = [
+      `# Revision Notes: ${active.title}`,
+      `*Generated with RecallAI on ${dateStr}*`,
+      ``,
+    ];
+
+    if (state.context.items.length > 0) {
+      lines.push(`## Key Academic Context & Prerequisites`);
+      for (const m of state.context.items) {
+        lines.push(`- **[${m.label}]**: ${m.summary}`);
+      }
+      if (state.context.note) {
+        lines.push(``, `> *${state.context.note}*`);
+      }
+      lines.push(``, `---`, ``);
+    }
+
+    lines.push(`## Study Dialogue`);
+    for (const msg of state.messages) {
+      if (msg.role === "user") {
+        lines.push(`### Question`, msg.content, ``);
+      } else if (msg.role === "assistant" && msg.content) {
+        lines.push(`### RecallAI Explanation`, msg.content, ``, `---`, ``);
+      }
+    }
+
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeTitle = active.title.replace(/[^a-z0-9_-]/gi, "_").slice(0, 40) || "Study";
+    a.href = url;
+    a.download = `${safeTitle}_Revision_Notes.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <header className="conv-header">
@@ -49,6 +95,16 @@ export function ConversationHeader() {
 
       {active && (
         <>
+          <button
+            type="button"
+            className="icon-btn"
+            data-quiet="true"
+            aria-label="Export revision notes to Markdown"
+            title="Export Revision Notes (.md)"
+            onClick={exportNotes}
+          >
+            <Download size={16} />
+          </button>
           <button
             type="button"
             className="icon-btn"

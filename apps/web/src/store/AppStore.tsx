@@ -265,6 +265,7 @@ export interface AppApi {
   rateMessage(messageId: string, value: MessageFeedback): Promise<void>;
   refreshContext(): Promise<void>;
   removeMemory(id: string): Promise<void>;
+  reviewMemory(id: string, rating: 1 | 2 | 3 | 4 | 5): Promise<void>;
   dismissToast(id: string): void;
 }
 
@@ -813,6 +814,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const reviewMemory = useCallback(
+    async (id: string, rating: 1 | 2 | 3 | 4 | 5) => {
+      try {
+        const res = await api.reviewMemory?.(id, rating);
+        if (res?.memory) {
+          dispatch({
+            type: "setContext",
+            value: {
+              items: stateRef.current.context.items.map((m) =>
+                m.id === id ? { ...m, ...res.memory } : m,
+              ),
+            },
+          });
+          const labels = ["Again", "Hard", "Good", "Easy", "Mastered"];
+          toast(
+            "success",
+            `Recall rated "${labels[rating - 1]}". Mastery: ${res.masteryScore}% (Next review in ${res.intervalDays}d)`,
+          );
+        }
+      } catch {
+        toast("error", "Could not record memory review.");
+      }
+    },
+    [toast],
+  );
+
   /* ---------------- simple setters ---------------- */
   const setDraft = useCallback((draftText: string) => {
     dispatch({ type: "patch", value: { draftText } });
@@ -879,6 +906,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rateMessage,
       refreshContext,
       removeMemory,
+      reviewMemory,
       dismissToast,
     }),
     [
@@ -906,6 +934,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rateMessage,
       refreshContext,
       removeMemory,
+      reviewMemory,
       dismissToast,
     ],
   );

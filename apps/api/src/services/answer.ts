@@ -96,11 +96,23 @@ export class LocalAnswerProvider implements AnswerProvider {
 
     const body =
       responseMode === "quiz"
-        ? [
-            `1. State the definition in one sentence, without symbols.`,
-            `2. Work a small numerical example and show every intermediate step.`,
-            `3. Give one situation where the idea fails, and explain why.`,
-          ].join("\n")
+        ? memories.some((m) => m.type === "mistake" || m.label.toLowerCase().includes("mistake"))
+          ? [
+              `1. **Diagnostic Definition**: In your own words, state the formal condition under which Newton's second law applies, specifically distinguishing the net resultant force from a single applied force.`,
+              ``,
+              `2. **Application Problem**: A block of mass $m = 5\\,\\text{kg}$ slides down an incline of angle $\\theta = 30^\\circ$ with kinetic friction $\\mu_k = 0.2$.`,
+              `   $$\\sum F_\\parallel = m g \\sin\\theta - f_k = m a$$`,
+              `   Calculate the acceleration $a$ step-by-step using $g = 9.8\\,\\text{m/s}^2$.`,
+              ``,
+              `3. **Mistake Elimination Challenge**: Explain why applying $F = ma$ by only considering gravity ($mg\\sin\\theta$) fails on inclined ramps with friction, and state the correct normal force $N = mg\\cos\\theta$.`,
+            ].join("\n")
+          : [
+              `1. **Core Concept**: State the fundamental definition and physical meaning of **${topic}** in one concise sentence.`,
+              ``,
+              `2. **Step-by-Step Problem**: Work through a representative problem on **${topic}**, showing every intermediate relation and algebraic substitution in LaTeX.`,
+              ``,
+              `3. **Misconception Trap**: Describe one scenario or boundary condition where common student intuition on **${topic}** breaks, and explain the correct formal resolution.`,
+            ].join("\n")
         : [
             `### What is actually happening`,
             ``,

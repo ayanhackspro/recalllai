@@ -61,13 +61,26 @@ CREATE TABLE IF NOT EXISTS memories (
   source          text        NOT NULL DEFAULT 'learned'
                   CHECK (source IN ('learned', 'suggested', 'demo')),
   keywords        text[]      NOT NULL DEFAULT '{}',
+  mastery_score   integer     NOT NULL DEFAULT 50,
+  repetition_count integer    NOT NULL DEFAULT 0,
+  next_review_at  timestamptz NOT NULL DEFAULT now(),
+  interval_days   integer     NOT NULL DEFAULT 1,
+  ease_factor     double precision NOT NULL DEFAULT 2.5,
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS mastery_score integer NOT NULL DEFAULT 50;
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS repetition_count integer NOT NULL DEFAULT 0;
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS next_review_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS interval_days integer NOT NULL DEFAULT 1;
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS ease_factor double precision NOT NULL DEFAULT 2.5;
 
 CREATE INDEX IF NOT EXISTS memories_conversation_idx
   ON memories (conversation_id);
 CREATE INDEX IF NOT EXISTS memories_keywords_idx
   ON memories USING gin (keywords);
+CREATE INDEX IF NOT EXISTS memories_next_review_idx
+  ON memories (next_review_at);
 
 -- Which memories actually informed which answer.
 CREATE TABLE IF NOT EXISTS message_memories (

@@ -105,6 +105,28 @@ export interface StudyMemory {
   summary: string;
   updatedAt?: string;
   source?: StudyMemorySource;
+  /** Mastery score from 0 (struggling) to 100 (mastered) */
+  masteryScore?: number;
+  /** Number of successful spaced repetitions (SM-2) */
+  repetitionCount?: number;
+  /** ISO timestamp when this concept is due for review */
+  nextReviewAt?: string;
+  /** Current interval between reviews in days */
+  intervalDays?: number;
+  /** SuperMemo-2 ease factor (defaults to 2.5) */
+  easeFactor?: number;
+}
+
+export interface MemoryReviewRequest {
+  /** 1 (forgot), 3 (recalled with difficulty), 5 (effortless recall) */
+  rating: 1 | 2 | 3 | 4 | 5;
+}
+
+export interface MemoryReviewResponse {
+  memory: StudyMemory;
+  nextReviewAt: string;
+  intervalDays: number;
+  masteryScore: number;
 }
 
 export interface StudyContext {

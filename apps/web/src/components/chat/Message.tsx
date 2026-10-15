@@ -21,38 +21,73 @@ import { AttachmentPreview, ImagePreview } from "@/components/uploads/Attachment
 /* Memory disclosure — "Used study context"                            */
 /* ------------------------------------------------------------------ */
 
-export function MemoryList({ items, onRemove }: { items: StudyMemory[]; onRemove?: (id: string) => void }) {
+export function MemoryList({
+  items,
+  onRemove,
+  onReview,
+}: {
+  items: StudyMemory[];
+  onRemove?: (id: string) => void;
+  onReview?: (id: string, rating: 1 | 2 | 3 | 4 | 5) => void;
+}) {
   return (
     <div className="context-list">
-      {items.map((m) => (
-        <div key={m.id} className="memory" data-type={m.type}>
-          <div className="memory-top">
-            <span className="tag" data-type={m.type}>{m.type.replace("_", " ")}</span>
-            <span className="memory-when">{m.label}</span>
-            {m.source === "demo" && <span className="badge-demo">demo</span>}
-            <div style={{ flex: 1 }} />
-            {onRemove && (
-              <button
-                type="button"
-                className="icon-btn"
-                data-quiet="true"
-                style={{ width: 22, height: 22 }}
-                aria-label={`Forget this ${m.type.replace("_", " ")}`}
-                onClick={() => onRemove(m.id)}
-              >
-                <Trash2 size={12} />
-              </button>
+      {items.map((m) => {
+        const mastery = m.masteryScore ?? 0;
+        const isDue = m.nextReviewAt ? new Date(m.nextReviewAt).getTime() <= Date.now() : false;
+
+        return (
+          <div key={m.id} className="memory" data-type={m.type}>
+            <div className="memory-top">
+              <span className="tag" data-type={m.type}>{m.type.replace("_", " ")}</span>
+              <span className="memory-when">{m.label}</span>
+              {isDue && <span className="memory-due-pill">Review due</span>}
+              {m.source === "demo" && <span className="badge-demo">demo</span>}
+              <div style={{ flex: 1 }} />
+              {onRemove && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  data-quiet="true"
+                  style={{ width: 22, height: 22 }}
+                  aria-label={`Forget this ${m.type.replace("_", " ")}`}
+                  onClick={() => onRemove(m.id)}
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+            <p className="memory-text">{m.summary}</p>
+
+            <div className="memory-mastery-wrap">
+              <span>Mastery: {mastery}%</span>
+              <div className="memory-mastery-bar">
+                <div className="memory-mastery-fill" style={{ width: `${mastery}%` }} />
+              </div>
+              {m.intervalDays ? <span>Interval: {m.intervalDays}d</span> : null}
+            </div>
+
+            {onReview && (
+              <div className="memory-review-row">
+                <span className="review-label">Rate recall (SM-2):</span>
+                <div className="review-btn-group">
+                  <button type="button" className="review-btn" onClick={() => onReview(m.id, 1)} title="Forgot completely">Again</button>
+                  <button type="button" className="review-btn" onClick={() => onReview(m.id, 2)} title="Struggled / hesitant">Hard</button>
+                  <button type="button" className="review-btn" onClick={() => onReview(m.id, 3)} title="Recalled with effort">Good</button>
+                  <button type="button" className="review-btn" onClick={() => onReview(m.id, 4)} title="Smooth recall">Easy</button>
+                  <button type="button" className="review-btn" onClick={() => onReview(m.id, 5)} title="Instant recall">Mastered</button>
+                </div>
+              </div>
             )}
           </div>
-          <p className="memory-text">{m.summary}</p>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 function ContextDisclosure({ message }: { message: ChatMessage }) {
-  const { removeMemory } = useApp();
+  const { removeMemory, reviewMemory } = useApp();
   if (!message.studyContext?.length) return null;
 
   return (
@@ -63,7 +98,7 @@ function ContextDisclosure({ message }: { message: ChatMessage }) {
         {message.studyContext.length > 1 ? "s" : ""} of study context
         <ChevronDown className="chev" size={13} style={{ marginLeft: "auto" }} />
       </summary>
-      <MemoryList items={message.studyContext} onRemove={removeMemory} />
+      <MemoryList items={message.studyContext} onRemove={removeMemory} onReview={reviewMemory} />
       {message.contextNote && (
         <p style={{ padding: "0 11px 11px", fontSize: 12, lineHeight: 1.5, color: "var(--text-3)" }}>
           {message.contextNote}

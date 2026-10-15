@@ -27,12 +27,18 @@ interface GraphRow {
   label: string;
   summary: string;
   source?: StudyMemorySource;
+  masteryScore?: number;
+  repetitionCount?: number;
+  nextReviewAt?: string;
+  intervalDays?: number;
+  easeFactor?: number;
   updatedAt?: string;
   topicName?: string;
   matchedTopicName?: string;
   relType?: string;
   distance?: number;
   edgeReason?: string;
+  score?: number;
 }
 
 /** Predefined concept dictionary mapping common student phrases to canonical topics. */
@@ -364,6 +370,11 @@ export class FalkorContextService {
              m.label = $label,
              m.summary = $summary,
              m.source = $source,
+             m.masteryScore = $masteryScore,
+             m.repetitionCount = $repetitionCount,
+             m.nextReviewAt = $nextReviewAt,
+             m.intervalDays = $intervalDays,
+             m.easeFactor = $easeFactor,
              m.conversationId = $conversationId,
              m.messageId = $messageId,
              m.updatedAt = $updatedAt`,
@@ -374,6 +385,11 @@ export class FalkorContextService {
             label: memory.label,
             summary: memory.summary,
             source: memory.source ?? "learned",
+            masteryScore: memory.masteryScore ?? 0,
+            repetitionCount: memory.repetitionCount ?? 0,
+            nextReviewAt: memory.nextReviewAt ?? "",
+            intervalDays: memory.intervalDays ?? 0,
+            easeFactor: memory.easeFactor ?? 2.5,
             conversationId: options?.conversationId ?? "",
             messageId: options?.messageId ?? "",
             updatedAt: nowIso,
@@ -439,8 +455,8 @@ export class FalkorContextService {
     if (!this.graph) return [];
     try {
       const cypher = conversationId
-        ? `MATCH (m:Memory) WHERE m.conversationId = $conversationId RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary, m.source AS source, m.updatedAt AS updatedAt ORDER BY m.updatedAt DESC`
-        : `MATCH (m:Memory) RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary, m.source AS source, m.updatedAt AS updatedAt ORDER BY m.updatedAt DESC`;
+        ? `MATCH (m:Memory) WHERE m.conversationId = $conversationId RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary, m.source AS source, m.masteryScore AS masteryScore, m.repetitionCount AS repetitionCount, m.nextReviewAt AS nextReviewAt, m.intervalDays AS intervalDays, m.easeFactor AS easeFactor, m.updatedAt AS updatedAt ORDER BY m.updatedAt DESC`
+        : `MATCH (m:Memory) RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary, m.source AS source, m.masteryScore AS masteryScore, m.repetitionCount AS repetitionCount, m.nextReviewAt AS nextReviewAt, m.intervalDays AS intervalDays, m.easeFactor AS easeFactor, m.updatedAt AS updatedAt ORDER BY m.updatedAt DESC`;
 
       const res = await this.graph.query<GraphRow>(cypher, {
         params: conversationId ? { conversationId } : undefined,
@@ -452,6 +468,11 @@ export class FalkorContextService {
         label: r.label,
         summary: r.summary,
         source: r.source ?? "learned",
+        masteryScore: r.masteryScore != null ? Number(r.masteryScore) : 0,
+        repetitionCount: r.repetitionCount != null ? Number(r.repetitionCount) : 0,
+        nextReviewAt: r.nextReviewAt || undefined,
+        intervalDays: r.intervalDays != null ? Number(r.intervalDays) : 0,
+        easeFactor: r.easeFactor != null ? Number(r.easeFactor) : 2.5,
         updatedAt: r.updatedAt,
       }));
     } catch (err) {
@@ -593,7 +614,45 @@ export class FalkorContextService {
         }
       }
 
-      const items: StudyMemory[] = Array.from(candidates.values())
+      // Hybrid GraphRAG Scoring:
+      // score = 0.45 * graphProximity + 0.35 * semanticSimilarity + 0.20 * retentionUrgency
+      const queryTokens = new Set(
+        [...topics.map((t) => t.toLowerCase()), ...keywords.map((k) => k.toLowerCase())].filter(
+          (t) => t.length > 2,
+        ),
+      );
+
+      const rankedCandidates = Array.from(candidates.values()).map((row) => {
+        // 1. Graph proximity score (1.0 for direct 1-hop, 0.75 for 2-hop traversal)
+        const graphScore = row.distance === 1 ? 1.0 : 0.75;
+
+        // 2. Semantic token overlap score
+        const memoryTokens = (row.summary + " " + row.label)
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/);
+        let matchCount = 0;
+        for (const tok of memoryTokens) {
+          if (queryTokens.has(tok)) matchCount++;
+        }
+        const semanticScore = queryTokens.size > 0 ? Math.min(1.0, matchCount / Math.max(1, queryTokens.size)) : 0.5;
+
+        // 3. Spaced repetition / Ebbinghaus forgetting curve urgency score
+        let retentionUrgency = 0.2;
+        if (row.nextReviewAt) {
+          const isOverdue = new Date(row.nextReviewAt).getTime() <= Date.now();
+          retentionUrgency = isOverdue ? 1.0 : 0.4;
+        }
+        if (row.type === "mistake") retentionUrgency += 0.3;
+
+        const totalScore = 0.45 * graphScore + 0.35 * semanticScore + 0.20 * Math.min(1.0, retentionUrgency);
+        return { ...row, score: totalScore };
+      });
+
+      // Sort by calculated hybrid score descending
+      rankedCandidates.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+      const items: StudyMemory[] = rankedCandidates
         .slice(0, limit)
         .map((r) => ({
           id: r.id,
@@ -601,6 +660,11 @@ export class FalkorContextService {
           label: r.label,
           summary: r.summary,
           source: r.source ?? "learned",
+          masteryScore: r.masteryScore != null ? Number(r.masteryScore) : 0,
+          repetitionCount: r.repetitionCount != null ? Number(r.repetitionCount) : 0,
+          nextReviewAt: r.nextReviewAt || undefined,
+          intervalDays: r.intervalDays != null ? Number(r.intervalDays) : 0,
+          easeFactor: r.easeFactor != null ? Number(r.easeFactor) : 2.5,
           updatedAt: r.updatedAt,
         }));
 
@@ -613,6 +677,38 @@ export class FalkorContextService {
     } catch (err) {
       console.warn("[falkordb] Graph retrieval error:", err);
       return { items: [], source: "fallback" };
+    }
+  }
+
+  /**
+   * Asynchronously distills session conversation turns into persistent conceptual knowledge and memory signals.
+   */
+  async distillSessionMemories(
+    conversationId: string,
+    history: Array<{ role: string; content: string }>,
+  ): Promise<StudyMemory[]> {
+    if (!this.graph || history.length < 2) return [];
+    try {
+      const userTurns = history
+        .filter((m) => m.role === "user")
+        .map((m) => m.content)
+        .join(" ");
+      const { topics } = this.extractTopics(userTurns);
+
+      const nowIso = new Date().toISOString();
+      for (const topic of topics) {
+        await this.graph.query(
+          `MERGE (t:Topic {name: $topic})
+           MERGE (s:Session {conversationId: $conversationId})
+           SET s.updatedAt = $now
+           MERGE (s)-[:STUDIED_TOPIC]->(t)`,
+          { params: { topic, conversationId, now: nowIso } },
+        );
+      }
+      return [];
+    } catch (err) {
+      console.warn("[falkordb] Error distilling session memories:", err);
+      return [];
     }
   }
 }

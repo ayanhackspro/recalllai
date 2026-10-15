@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import katex from "katex";
 
 /**
@@ -145,6 +145,29 @@ function parseBlock(chunk: string): Block {
 /* Math                                                                */
 /* ------------------------------------------------------------------ */
 
+function CopyTexButton({ tex }: { tex: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void navigator.clipboard.writeText(tex);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      className="tex-copy-btn"
+      onClick={handleCopy}
+      title="Copy LaTeX formula"
+      aria-label="Copy LaTeX formula"
+    >
+      {copied ? "Copied!" : "Copy LaTeX"}
+    </button>
+  );
+}
+
 function Tex({ tex, display }: { tex: string; display: boolean }) {
   let html: string;
   try {
@@ -162,9 +185,22 @@ function Tex({ tex, display }: { tex: string; display: boolean }) {
     return <code>{tex}</code>;
   }
 
+  if (display) {
+    return (
+      <span className="tex-display-wrapper">
+        <span
+          className="tex tex-display"
+          // KaTeX output only. `trust: false` and KaTeX's own escaping apply.
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+        <CopyTexButton tex={tex} />
+      </span>
+    );
+  }
+
   return (
     <span
-      className={display ? "tex tex-display" : "tex tex-inline"}
+      className="tex tex-inline"
       // KaTeX output only. `trust: false` and KaTeX's own escaping apply.
       dangerouslySetInnerHTML={{ __html: html }}
     />

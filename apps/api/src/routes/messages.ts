@@ -124,6 +124,21 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
       finalNote = `Picked up from where you left off in your previous session ("${previousSession.title}").`;
     }
 
+    // In Quiz Mode, prioritize concepts due for spaced repetition review (Ebbinghaus forgetting curve)
+    if (body.responseMode === "quiz") {
+      const dueMemories = await repo.listDueMemories(3);
+      if (dueMemories.length > 0) {
+        for (const due of dueMemories) {
+          if (!items.some((it) => it.id === due.id)) {
+            items.unshift(due);
+          }
+        }
+        finalNote = finalNote
+          ? `${finalNote} Prioritized concepts due for spaced repetition review.`
+          : `Prioritized concepts approaching the forgetting curve threshold for spaced repetition review.`;
+      }
+    }
+
     const allMessages = await repo.listMessages(conversationId);
     const history = allMessages
       .filter((m) => m.id !== userMessage.id && m.status === "complete")

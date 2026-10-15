@@ -29,8 +29,65 @@ export class PgRepository implements Repository {
     });
   }
 
+  /**
+   * Identifies transient socket disconnects and serverless cold-start resets
+   * typical of Neon compute auto-suspension.
+   */
+  private isTransientError(err: unknown): boolean {
+    if (!err || typeof err !== "object") return false;
+    const e = err as { code?: string; message?: string };
+    const transientCodes = [
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "EPIPE",
+      "57P01", // admin shutdown
+      "08006", // connection failure
+      "08001", // unable to establish connection
+      "08004", // rejected connection
+      "08007", // transaction unknown
+    ];
+    if (e.code && transientCodes.includes(e.code)) return true;
+    if (typeof e.message === "string") {
+      const msg = e.message.toLowerCase();
+      return (
+        msg.includes("connection terminated") ||
+        msg.includes("connection closed") ||
+        msg.includes("socket closed") ||
+        msg.includes("timeout") ||
+        msg.includes("econnreset")
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Resilient query execution with exponential backoff and jitter for Neon serverless cold starts.
+   */
+  async queryWithRetry<R extends import("pg").QueryResultRow = any>(
+    text: string,
+    params?: unknown[],
+    retries = 3,
+    delayMs = 250,
+  ): Promise<import("pg").QueryResult<R>> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await this.pool.query<R>(text, params);
+      } catch (err) {
+        lastError = err;
+        if (attempt < retries && this.isTransientError(err)) {
+          const backoff = delayMs * Math.pow(2, attempt - 1) + Math.random() * 50;
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastError;
+  }
+
   async init(): Promise<void> {
-    await this.pool.query("SELECT 1");
+    await this.queryWithRetry("SELECT 1");
   }
 
   async close(): Promise<void> {
@@ -42,7 +99,7 @@ export class PgRepository implements Repository {
   /* ------------------------------------------------------------------ */
 
   async listConversations(): Promise<Conversation[]> {
-    const { rows } = await this.pool.query<Conversation>(
+    const { rows } = await this.queryWithRetry<Conversation>(
       `SELECT id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"
          FROM conversations
         ORDER BY updated_at DESC
@@ -52,7 +109,7 @@ export class PgRepository implements Repository {
   }
 
   async createConversation(title = "New conversation"): Promise<Conversation> {
-    const { rows } = await this.pool.query<Conversation>(
+    const { rows } = await this.queryWithRetry<Conversation>(
       `INSERT INTO conversations (title)
             VALUES ($1)
          RETURNING id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"`,
@@ -62,7 +119,7 @@ export class PgRepository implements Repository {
   }
 
   async getConversation(id: string): Promise<Conversation | null> {
-    const { rows } = await this.pool.query<Conversation>(
+    const { rows } = await this.queryWithRetry<Conversation>(
       `SELECT id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"
          FROM conversations WHERE id = $1`,
       [id],
@@ -71,7 +128,7 @@ export class PgRepository implements Repository {
   }
 
   async renameConversation(id: string, title: string): Promise<Conversation | null> {
-    const { rows } = await this.pool.query<Conversation>(
+    const { rows } = await this.queryWithRetry<Conversation>(
       `UPDATE conversations
           SET title = $2, updated_at = now()
         WHERE id = $1
@@ -82,7 +139,7 @@ export class PgRepository implements Repository {
   }
 
   async setConversationPreview(id: string, preview: string): Promise<void> {
-    await this.pool.query(
+    await this.queryWithRetry(
       `UPDATE conversations
           SET preview = $2, updated_at = now()
         WHERE id = $1`,
@@ -91,7 +148,7 @@ export class PgRepository implements Repository {
   }
 
   async deleteConversation(id: string): Promise<boolean> {
-    const res = await this.pool.query(`DELETE FROM conversations WHERE id = $1`, [id]);
+    const res = await this.queryWithRetry(`DELETE FROM conversations WHERE id = $1`, [id]);
     return (res.rowCount ?? 0) > 0;
   }
 
@@ -100,7 +157,7 @@ export class PgRepository implements Repository {
   /* ------------------------------------------------------------------ */
 
   async listMessages(conversationId: string): Promise<ChatMessage[]> {
-    const { rows } = await this.pool.query<ChatMessageRow>(
+    const { rows } = await this.queryWithRetry<ChatMessageRow>(
       `SELECT id, role, content, status, error, created_at AS "createdAt"
          FROM messages
         WHERE conversation_id = $1
@@ -189,7 +246,7 @@ export class PgRepository implements Repository {
     id: string,
     value: Partial<Pick<ChatMessage, "content" | "status">> & { error?: string | null },
   ): Promise<void> {
-    await this.pool.query(
+    await this.queryWithRetry(
       `UPDATE messages
           SET content = COALESCE($2, content),
               status  = COALESCE($3, status),
@@ -206,7 +263,7 @@ export class PgRepository implements Repository {
   async createAttachment(
     value: NewAttachment,
   ): Promise<Attachment> {
-    const { rows } = await this.pool.query<AttachmentRow>(
+    const { rows } = await this.queryWithRetry<AttachmentRow>(
       `INSERT INTO attachments
          (conversation_id, name, mime_type, size, kind, status, storage_path)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -228,7 +285,7 @@ export class PgRepository implements Repository {
     id: string,
     value: AttachmentPatch,
   ): Promise<void> {
-    await this.pool.query(
+    await this.queryWithRetry(
       `UPDATE attachments
           SET status          = COALESCE($2, status),
               error           = $3,
@@ -248,7 +305,7 @@ export class PgRepository implements Repository {
   }
 
   async getAttachment(id: string) {
-    const { rows } = await this.pool.query<AttachmentRow & { storage_path: string | null; extracted_text: string | null }>(
+    const { rows } = await this.queryWithRetry<AttachmentRow & { storage_path: string | null; extracted_text: string | null }>(
       `SELECT * FROM attachments WHERE id = $1`,
       [id],
     );
@@ -261,12 +318,12 @@ export class PgRepository implements Repository {
   }
 
   async deleteAttachment(id: string): Promise<boolean> {
-    const res = await this.pool.query(`DELETE FROM attachments WHERE id = $1`, [id]);
+    const res = await this.queryWithRetry(`DELETE FROM attachments WHERE id = $1`, [id]);
     return (res.rowCount ?? 0) > 0;
   }
 
   async listAttachments(conversationId: string): Promise<Attachment[]> {
-    const { rows } = await this.pool.query<AttachmentRow>(
+    const { rows } = await this.queryWithRetry<AttachmentRow>(
       `SELECT * FROM attachments WHERE conversation_id = $1 ORDER BY created_at ASC`,
       [conversationId],
     );
@@ -274,7 +331,7 @@ export class PgRepository implements Repository {
   }
 
   private async listAttachmentsByMessageIds(ids: string[]) {
-    const { rows } = await this.pool.query<AttachmentRow>(
+    const { rows } = await this.queryWithRetry<AttachmentRow>(
       `SELECT * FROM attachments WHERE message_id = ANY($1::uuid[]) ORDER BY created_at ASC`,
       [ids],
     );
@@ -292,8 +349,88 @@ export class PgRepository implements Repository {
   /* Memories                                                            */
   /* ------------------------------------------------------------------ */
 
+  async getMemory(id: string): Promise<StudyMemory | null> {
+    const { rows } = await this.queryWithRetry<MemoryRow>(
+      `SELECT * FROM memories WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toMemory(rows[0]) : null;
+  }
+
+  async listDueMemories(limit = 20): Promise<StudyMemory[]> {
+    const { rows } = await this.queryWithRetry<MemoryRow>(
+      `SELECT * FROM memories
+        WHERE next_review_at IS NULL OR next_review_at <= now()
+        ORDER BY next_review_at ASC NULLS FIRST, mastery_score ASC, updated_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return rows.map(toMemory);
+  }
+
+  async reviewMemory(id: string, rating: 1 | 2 | 3 | 4 | 5): Promise<StudyMemory | null> {
+    const { rows: existingRows } = await this.queryWithRetry<MemoryRow>(
+      `SELECT * FROM memories WHERE id = $1`,
+      [id],
+    );
+    const existing = existingRows[0];
+    if (!existing) return null;
+
+    const repCount = existing.repetition_count != null ? Number(existing.repetition_count) : 0;
+    const intervalDays = existing.interval_days != null ? Number(existing.interval_days) : 0;
+    const easeFactor = existing.ease_factor != null ? Number(existing.ease_factor) : 2.5;
+    const masteryScore = existing.mastery_score != null ? Number(existing.mastery_score) : 0;
+
+    // SuperMemo-2 (SM-2) algorithm
+    const newEaseFactor = Math.max(
+      1.3,
+      Number((easeFactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02))).toFixed(3)),
+    );
+
+    let newRepCount = repCount;
+    let newIntervalDays = intervalDays;
+    let newMasteryScore = masteryScore;
+
+    if (rating < 3) {
+      // Failed recall: reset repetitions and schedule review tomorrow
+      newRepCount = 0;
+      newIntervalDays = 1;
+      newMasteryScore = Math.max(0, Math.round(masteryScore * 0.7 - (3 - rating) * 10));
+    } else {
+      // Successful recall: advance repetitions and scale interval
+      if (repCount === 0) {
+        newIntervalDays = 1;
+      } else if (repCount === 1) {
+        newIntervalDays = 3;
+      } else {
+        newIntervalDays = Math.max(1, Math.round(intervalDays * newEaseFactor));
+      }
+      newRepCount = repCount + 1;
+
+      const masteryBonus = rating === 5 ? 25 : rating === 4 ? 15 : 8;
+      newMasteryScore = Math.min(100, masteryScore + masteryBonus);
+    }
+
+    const nextReview = new Date(Date.now() + newIntervalDays * 86_400_000);
+
+    const { rows: updatedRows } = await this.queryWithRetry<MemoryRow>(
+      `UPDATE memories
+          SET repetition_count = $2,
+              interval_days    = $3,
+              ease_factor      = $4,
+              mastery_score    = $5,
+              next_review_at   = $6,
+              updated_at       = now()
+        WHERE id = $1
+      RETURNING *`,
+      [id, newRepCount, newIntervalDays, newEaseFactor, newMasteryScore, nextReview.toISOString()],
+    );
+
+    return updatedRows[0] ? toMemory(updatedRows[0]) : null;
+  }
+
   async listMemories(conversationId?: string): Promise<StudyMemory[]> {
-    const { rows } = await this.pool.query<MemoryRow>(
+    const { rows } = await this.queryWithRetry<MemoryRow>(
       conversationId
         ? `SELECT * FROM memories WHERE conversation_id = $1 ORDER BY updated_at DESC`
         : `SELECT * FROM memories ORDER BY updated_at DESC`,
@@ -313,9 +450,9 @@ export class PgRepository implements Repository {
       existingParams = [value.conversationId];
     }
 
-    const { rows: existing } = await this.pool.query<MemoryRow>(existingQuery, existingParams);
+    const { rows: existing } = await this.queryWithRetry<MemoryRow>(existingQuery, existingParams);
     if (existing[0]) {
-      const { rows } = await this.pool.query<MemoryRow>(
+      const { rows } = await this.queryWithRetry<MemoryRow>(
         `UPDATE memories
             SET label = $2,
                 summary = $3,
@@ -329,9 +466,9 @@ export class PgRepository implements Repository {
       return toMemory(rows[0]!);
     }
 
-    const { rows } = await this.pool.query<MemoryRow>(
-      `INSERT INTO memories (conversation_id, message_id, type, label, summary, source, keywords)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+    const { rows } = await this.queryWithRetry<MemoryRow>(
+      `INSERT INTO memories (conversation_id, message_id, type, label, summary, source, keywords, mastery_score, repetition_count, interval_days, ease_factor)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 2.5)
          RETURNING *`,
       [
         value.conversationId ?? null,
@@ -347,13 +484,13 @@ export class PgRepository implements Repository {
   }
 
   async deleteMemory(id: string): Promise<boolean> {
-    const res = await this.pool.query(`DELETE FROM memories WHERE id = $1`, [id]);
+    const res = await this.queryWithRetry(`DELETE FROM memories WHERE id = $1`, [id]);
     return (res.rowCount ?? 0) > 0;
   }
 
   async findMemoriesByKeywords(keywords: string[], limit: number): Promise<StudyMemory[]> {
     if (keywords.length === 0) return [];
-    const { rows } = await this.pool.query<MemoryRow>(
+    const { rows } = await this.queryWithRetry<MemoryRow>(
       `SELECT * FROM memories
         WHERE keywords && $1::text[]
         ORDER BY updated_at DESC
@@ -385,7 +522,7 @@ export class PgRepository implements Repository {
   }
 
   async memoriesForMessage(messageId: string): Promise<StudyMemory[]> {
-    const { rows } = await this.pool.query<MemoryRow>(
+    const { rows } = await this.queryWithRetry<MemoryRow>(
       `SELECT m.* FROM memories m
          JOIN message_memories mm ON mm.memory_id = m.id
         WHERE mm.message_id = $1`,
@@ -395,7 +532,7 @@ export class PgRepository implements Repository {
   }
 
   async memoriesForMessages(ids: string[]) {
-    const { rows } = await this.pool.query<MemoryRow>(
+    const { rows } = await this.queryWithRetry<MemoryRow>(
       `SELECT m.*, mm.message_id AS linked_message
          FROM memories m
          JOIN message_memories mm ON mm.memory_id = m.id
@@ -414,7 +551,7 @@ export class PgRepository implements Repository {
 
   /** The plain-language reason, stored alongside the answer. */
   async contextNoteForMessage(messageId: string): Promise<string | undefined> {
-    const { rows } = await this.pool.query<{ note: string | null }>(
+    const { rows } = await this.queryWithRetry<{ note: string | null }>(
       `SELECT note FROM message_context_notes WHERE message_id = $1`,
       [messageId],
     );
@@ -422,7 +559,7 @@ export class PgRepository implements Repository {
   }
 
   async setContextNote(messageId: string, note: string): Promise<void> {
-    await this.pool.query(
+    await this.queryWithRetry(
       `INSERT INTO message_context_notes (message_id, note)
             VALUES ($1, $2)
          ON CONFLICT (message_id) DO UPDATE SET note = EXCLUDED.note`,
@@ -435,7 +572,7 @@ export class PgRepository implements Repository {
   /* ------------------------------------------------------------------ */
 
   async setFeedback(messageId: string, value: MessageFeedback): Promise<void> {
-    await this.pool.query(
+    await this.queryWithRetry(
       `INSERT INTO feedback (message_id, value) VALUES ($1, $2)
          ON CONFLICT (message_id) DO UPDATE SET value = EXCLUDED.value, created_at = now()`,
       [messageId, value],
@@ -474,6 +611,11 @@ interface MemoryRow {
   label: string;
   summary: string;
   source: StudyMemory["source"];
+  mastery_score?: number | null;
+  repetition_count?: number | null;
+  next_review_at?: Date | string | null;
+  interval_days?: number | null;
+  ease_factor?: number | null;
   updated_at: Date | string;
   linked_message?: string;
 }
@@ -498,6 +640,15 @@ function toMemory(row: MemoryRow): StudyMemory {
     label: row.label,
     summary: row.summary,
     source: row.source,
+    masteryScore: row.mastery_score != null ? Number(row.mastery_score) : 0,
+    repetitionCount: row.repetition_count != null ? Number(row.repetition_count) : 0,
+    nextReviewAt: row.next_review_at
+      ? row.next_review_at instanceof Date
+        ? row.next_review_at.toISOString()
+        : String(row.next_review_at)
+      : undefined,
+    intervalDays: row.interval_days != null ? Number(row.interval_days) : 0,
+    easeFactor: row.ease_factor != null ? Number(row.ease_factor) : 2.5,
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
   };
 }

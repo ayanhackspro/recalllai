@@ -46,6 +46,9 @@ export interface Repository {
   listAttachments(conversationId: string): Promise<Attachment[]>;
 
   listMemories(conversationId?: string): Promise<StudyMemory[]>;
+  getMemory(id: string): Promise<StudyMemory | null>;
+  listDueMemories(limit?: number): Promise<StudyMemory[]>;
+  reviewMemory(id: string, rating: 1 | 2 | 3 | 4 | 5): Promise<StudyMemory | null>;
   upsertMemory(value: NewMemory): Promise<StudyMemory>;
   deleteMemory(id: string): Promise<boolean>;
   /** Memories whose keywords overlap the supplied set. */
