@@ -1,11 +1,17 @@
 "use client";
 
-import { Brain, Download, Menu, Pencil, Trash2 } from "lucide-react";
+import { Brain, Download, Menu, Network, Pencil, Trash2 } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 
 export function ConversationHeader() {
-  const { state, toggleSidebar, toggleContext, renameConversation, deleteConversation } =
-    useApp();
+  const {
+    state,
+    toggleSidebar,
+    toggleContext,
+    toggleGraph,
+    renameConversation,
+    deleteConversation,
+  } = useApp();
 
   const active = state.conversations.find((c) => c.id === state.activeId);
   const busy = state.generation === "streaming" || state.generation === "submitting";
@@ -91,6 +97,18 @@ export function ConversationHeader() {
         title="Study context"
       >
         <Brain size={17} />
+      </button>
+
+      <button
+        type="button"
+        className="icon-btn graph-trigger-btn"
+        data-quiet="true"
+        onClick={() => toggleGraph(!state.graphOpen)}
+        aria-label="Academic Knowledge Graph & Mastery Heatmap"
+        aria-pressed={state.graphOpen}
+        title="Knowledge Graph & Mastery Heatmap"
+      >
+        <Network size={17} />
       </button>
 
       {active && (

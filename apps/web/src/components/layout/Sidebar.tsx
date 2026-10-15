@@ -7,11 +7,11 @@ import {
   MessageSquare,
   MoreHorizontal,
   Moon,
+  Network,
   Pencil,
   Plus,
   Search,
   Settings,
-  Sparkles,
   Sun,
   Trash2,
   X,
@@ -111,6 +111,7 @@ export function Sidebar() {
     deleteConversation,
     setSearchQuery,
     toggleCollapsed,
+    toggleGraph,
     setTheme,
   } = useApp();
 
@@ -169,6 +170,17 @@ export function Sidebar() {
         >
           <Plus size={17} />
           <span>New conversation</span>
+        </button>
+
+        <button
+          type="button"
+          className="sidebar-graph-btn"
+          onClick={() => toggleGraph(true)}
+          title="Open Academic Knowledge Graph & Mastery Heatmap"
+        >
+          <Network size={16} />
+          <span>Knowledge Graph</span>
+          <span className="graph-pill-badge">Heatmap</span>
         </button>
 
         <div className="search">
@@ -333,8 +345,15 @@ export function Sidebar() {
                 {state.theme === "dark" && <Check size={14} />}
               </button>
               <hr />
-              <button type="button" role="menuitem" disabled style={{ opacity: 0.55 }}>
-                <Sparkles size={14} /> Response style: study
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  toggleGraph(true);
+                }}
+              >
+                <Network size={14} /> Knowledge Graph Canvas
               </button>
               <button type="button" role="menuitem" disabled style={{ opacity: 0.55 }}>
                 <Brain size={14} /> Manage memories

@@ -1,5 +1,14 @@
 import { FalkorDB, type Graph } from "falkordb";
-import type { StudyMemory, StudyMemorySource, StudyMemoryType } from "@recallai/shared-types";
+import type {
+  StudyMemory,
+  StudyMemorySource,
+  StudyMemoryType,
+  KnowledgeGraphData,
+  GraphNode,
+  GraphEdge,
+  GraphMasteryStatus,
+  ConnectedMistake,
+} from "@recallai/shared-types";
 import { config } from "../config.js";
 import { keywordsOf } from "../db/repository.js";
 
@@ -78,6 +87,12 @@ const CORE_ONTOLOGY_EDGES = [
     reason: "Newton's second law formally defines net force as the product of mass and acceleration.",
   },
   {
+    from: "Newton's Laws",
+    to: "Momentum",
+    type: "PREREQUISITE_OF",
+    reason: "Momentum conservation and impulse relate directly to Newton's first and third laws.",
+  },
+  {
     from: "Net Force",
     to: "Friction",
     type: "CONNECTED_TO",
@@ -108,6 +123,12 @@ const CORE_ONTOLOGY_EDGES = [
     reason: "Torque is the rotational analogue of net force.",
   },
   {
+    from: "Linear Algebra",
+    to: "Determinants",
+    type: "PREREQUISITE_OF",
+    reason: "Determinants quantify volume scaling and invertibility for linear transformations.",
+  },
+  {
     from: "Determinants",
     to: "Eigenvalues",
     type: "PREREQUISITE_OF",
@@ -124,6 +145,12 @@ const CORE_ONTOLOGY_EDGES = [
     to: "Linear Algebra",
     type: "CONNECTED_TO",
     reason: "Matrix decompositions are a core pillar of applied linear algebra.",
+  },
+  {
+    from: "Derivatives",
+    to: "Integrals",
+    type: "CONNECTED_TO",
+    reason: "The Fundamental Theorem of Calculus establishes integration as the inverse operation of differentiation.",
   },
   {
     from: "Photon Momentum",
@@ -143,7 +170,48 @@ const CORE_ONTOLOGY_EDGES = [
     type: "CONNECTED_TO",
     reason: "Dynamic programming solves overlapping subproblems that originate from recursive formulations.",
   },
+  {
+    from: "Recursion",
+    to: "Trees",
+    type: "CONNECTED_TO",
+    reason: "Tree traversals and hierarchical searches are naturally formulated through recursive sub-tree operations.",
+  },
+  {
+    from: "Time Complexity",
+    to: "Recursion",
+    type: "CONNECTED_TO",
+    reason: "Recurrence relations and the Master Theorem are used to characterize recursive algorithmic scaling.",
+  },
+  {
+    from: "Dynamic Programming",
+    to: "Time Complexity",
+    type: "CONNECTED_TO",
+    reason: "Dynamic programming memoization optimizes exponential recursive searches down to polynomial time.",
+  },
 ];
+
+/** Rich academic definitions for concept inspector panels. */
+export const TOPIC_SUMMARIES: Record<string, string> = {
+  "Newton's Laws": "Classical mechanics axioms governing inertial frames, instantaneous acceleration via F = dp/dt = ma, and reciprocal action-reaction force pairs.",
+  "Net Force": "The resultant vector sum of all external physical forces acting upon a body, directly dictating its linear acceleration.",
+  "Friction": "Dissipative contact resistance between surfaces, modeled via static (mu_s * N) and kinetic (mu_k * N) coefficients opposing motion.",
+  "Inclined Plane": "Classic two-dimensional mechanics problem requiring coordinate decomposition along axes parallel and perpendicular to a tilted plane.",
+  "Momentum": "Linear momentum p = mv and the impulse-momentum theorem governing closed collision systems under fundamental conservation laws.",
+  "Torque": "Rotational analogue of force tau = r x F, measuring rotational effectiveness about a pivot axis and governing angular acceleration.",
+  "Quantum Interference": "Wavefunction superposition and probabilistic wave-particle duality demonstrated in double-slit electron and photon diffraction.",
+  "Photon Momentum": "Relativistic momentum carried by massless electromagnetic quanta defined by the de Broglie relation p = h / lambda.",
+  "Eigenvalues": "Scalars lambda satisfying characteristic equation det(A - lambda*I) = 0 for linear operator A, mapping eigenvectors to pure scalar scaling.",
+  "Matrix Decompositions": "Factorization of matrices into canonical forms including Eigendecomposition, Singular Value Decomposition (SVD), and QR factorization.",
+  "Determinants": "Multilinear scaling factor of oriented n-dimensional volume transformed by a square matrix, indicating invertibility when non-zero.",
+  "Linear Algebra": "Study of vector spaces, linear transformations, basis vectors, span, null spaces, and matrix representations.",
+  "Derivatives": "Instantaneous rate of change of real functions, limits of difference quotients, and gradient fields in multivariable calculus.",
+  "Integrals": "Accumulation of continuous quantities, signed area under curves, Riemann sums, and the Fundamental Theorem of Calculus.",
+  "Recursion": "Computational method where a function solves a problem by calling itself with reduced input size towards one or more well-defined base cases.",
+  "Call Stack": "Last-in, first-out memory segment allocating activation frames for active subroutines, parameter passing, and return addresses.",
+  "Dynamic Programming": "Optimization paradigm combining optimal substructure and overlapping subproblems via memoization or bottom-up tabulation.",
+  "Trees": "Hierarchical non-linear graph data structures without cycles, including Binary Search Trees, self-balancing AVL/Red-Black trees, and Heaps.",
+  "Time Complexity": "Asymptotic upper (Big-O), lower (Omega), and tight (Theta) bounds quantifying execution time growth as input size n approaches infinity.",
+};
 
 export class FalkorContextService {
   private client: FalkorDB | null = null;
@@ -711,7 +779,197 @@ export class FalkorContextService {
       return [];
     }
   }
+
+  /**
+   * Generates the complete academic knowledge graph and mastery heatmap data.
+   * Merges FalkorDB ontology nodes, relationship edges, and spaced repetition SM-2
+   * retention metrics from durable memory.
+   */
+  async getKnowledgeGraph(repoMemories?: StudyMemory[]): Promise<KnowledgeGraphData> {
+    try {
+      // 1. Gather all memories from graph or repository
+      let allMemories: StudyMemory[] = [];
+      if (this.graph) {
+        allMemories = await this.listMemories();
+      }
+      if (repoMemories && repoMemories.length > 0) {
+        const memMap = new Map<string, StudyMemory>();
+        for (const m of allMemories) memMap.set(m.id, m);
+        for (const m of repoMemories) memMap.set(m.id, m);
+        allMemories = Array.from(memMap.values());
+      }
+
+      // 2. Build topic-to-memories mapping
+      const topicMemoriesMap = new Map<string, StudyMemory[]>();
+      for (const m of allMemories) {
+        const derived = this.extractTopics(m.summary + " " + (m.label || ""));
+        for (const topic of derived.topics) {
+          const list = topicMemoriesMap.get(topic) || [];
+          list.push(m);
+          topicMemoriesMap.set(topic, list);
+        }
+      }
+
+      // 3. Build edges & adjacency maps for prerequisites & dependents
+      const edgeList: GraphEdge[] = [];
+      const prereqsMap = new Map<string, string[]>();
+      const dependentsMap = new Map<string, string[]>();
+
+      for (const edge of CORE_ONTOLOGY_EDGES) {
+        edgeList.push({
+          id: `${edge.from}->${edge.to}`,
+          source: edge.from,
+          target: edge.to,
+          type: edge.type as any,
+          reason: edge.reason,
+        });
+
+        if (edge.type === "PREREQUISITE_OF") {
+          const pList = prereqsMap.get(edge.to) || [];
+          if (!pList.includes(edge.from)) pList.push(edge.from);
+          prereqsMap.set(edge.to, pList);
+
+          const dList = dependentsMap.get(edge.from) || [];
+          if (!dList.includes(edge.to)) dList.push(edge.to);
+          dependentsMap.set(edge.from, dList);
+        }
+      }
+
+      // 4. Construct GraphNode for each topic with SM-2 mastery status
+      const now = Date.now();
+      const nodes: GraphNode[] = [];
+      let totalMasterySum = 0;
+      let ratedTopicsCount = 0;
+
+      const summaryStats = {
+        totalTopics: CONCEPT_MAPPINGS.length,
+        mastered: 0,
+        learning: 0,
+        struggling: 0,
+        reviewDue: 0,
+        unexplored: 0,
+        averageMastery: 0,
+      };
+
+      for (const item of CONCEPT_MAPPINGS) {
+        const topicName = item.topic;
+        const category = item.category as any;
+        const attached = topicMemoriesMap.get(topicName) || [];
+
+        const mistakes: ConnectedMistake[] = attached
+          .filter((m) => m.type === "mistake")
+          .map((m) => ({
+            id: m.id,
+            label: m.label,
+            summary: m.summary,
+            masteryScore: m.masteryScore,
+          }));
+
+        let masteryScore = 0;
+        let status: GraphMasteryStatus = "unexplored";
+        let isDue = false;
+        let nextReviewAt: string | undefined;
+        let intervalDays: number | undefined;
+        let repetitionCount: number | undefined;
+        let easeFactor: number | undefined;
+
+        if (attached.length > 0) {
+          const totalScores = attached.reduce((acc, m) => acc + (m.masteryScore ?? 50), 0);
+          masteryScore = Math.round(totalScores / attached.length);
+          totalMasterySum += masteryScore;
+          ratedTopicsCount += 1;
+
+          // Check for overdue reviews
+          const overdueMem = attached.find((m) => {
+            if (!m.nextReviewAt) return false;
+            return new Date(m.nextReviewAt).getTime() <= now;
+          });
+
+          if (overdueMem) {
+            isDue = true;
+            nextReviewAt = overdueMem.nextReviewAt;
+            intervalDays = overdueMem.intervalDays;
+            repetitionCount = overdueMem.repetitionCount;
+            easeFactor = overdueMem.easeFactor;
+          } else {
+            const nextUpcoming = attached
+              .filter((m) => m.nextReviewAt)
+              .sort((a, b) => (a.nextReviewAt! > b.nextReviewAt! ? 1 : -1))[0];
+            if (nextUpcoming) {
+              nextReviewAt = nextUpcoming.nextReviewAt;
+              intervalDays = nextUpcoming.intervalDays;
+              repetitionCount = nextUpcoming.repetitionCount;
+              easeFactor = nextUpcoming.easeFactor;
+            }
+          }
+
+          // Evaluate Mastery status:
+          // 🔴 Struggling: recurring mistake under 40%, or topic mastery under 40%
+          const hasStrugglingMistake = mistakes.some((m) => (m.masteryScore ?? 0) < 40);
+          if (hasStrugglingMistake || (mistakes.length > 0 && masteryScore < 50) || masteryScore < 40) {
+            status = "struggling";
+            summaryStats.struggling += 1;
+          } else if (isDue) {
+            status = "review_due";
+            summaryStats.reviewDue += 1;
+          } else if (masteryScore >= 75) {
+            status = "mastered";
+            summaryStats.mastered += 1;
+          } else {
+            status = "learning";
+            summaryStats.learning += 1;
+          }
+        } else {
+          status = "unexplored";
+          summaryStats.unexplored += 1;
+        }
+
+        nodes.push({
+          id: topicName,
+          label: topicName,
+          category,
+          type: "topic",
+          masteryScore,
+          status,
+          memoryCount: attached.length,
+          isDue,
+          summary: TOPIC_SUMMARIES[topicName] || `${category} concept in academic knowledge curriculum.`,
+          prerequisites: prereqsMap.get(topicName) || [],
+          dependents: dependentsMap.get(topicName) || [],
+          connectedMistakes: mistakes,
+          nextReviewAt,
+          intervalDays,
+          repetitionCount,
+          easeFactor,
+        });
+      }
+
+      summaryStats.averageMastery = ratedTopicsCount > 0 ? Math.round(totalMasterySum / ratedTopicsCount) : 0;
+
+      return {
+        nodes,
+        edges: edgeList,
+        summary: summaryStats,
+      };
+    } catch (err) {
+      console.warn("[falkordb] Error generating knowledge graph:", err);
+      return {
+        nodes: [],
+        edges: [],
+        summary: {
+          totalTopics: 0,
+          mastered: 0,
+          learning: 0,
+          struggling: 0,
+          reviewDue: 0,
+          unexplored: 0,
+          averageMastery: 0,
+        },
+      };
+    }
+  }
 }
+
 
 /** Global singleton instance for the API process. */
 export const falkorContext = new FalkorContextService();

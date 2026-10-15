@@ -145,6 +145,15 @@ export function memoriesRouter(repo: Repository): Router {
   );
 
   r.get(
+    "/graph",
+    asyncRoute(async (_req, res) => {
+      const repoMemories = await repo.listMemories();
+      const graphData = await falkorContext.getKnowledgeGraph(repoMemories);
+      res.json(graphData);
+    }),
+  );
+
+  r.get(
     "/",
     asyncRoute(async (_req, res) => {
       if (falkorContext.isConnected) {

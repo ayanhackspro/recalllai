@@ -139,6 +139,76 @@ export interface StudyContext {
 }
 
 /* ------------------------------------------------------------------ */
+/* Knowledge Graph & Mastery Heatmap                                  */
+/* ------------------------------------------------------------------ */
+
+export type GraphNodeType = "topic" | "memory";
+
+export type GraphMasteryStatus =
+  | "mastered"
+  | "review_due"
+  | "learning"
+  | "struggling"
+  | "unexplored";
+
+export type GraphEdgeType =
+  | "PREREQUISITE_OF"
+  | "CONNECTED_TO"
+  | "RELATES_TO"
+  | "RECURRING_MISTAKE_IN";
+
+export interface ConnectedMistake {
+  id: string;
+  label: string;
+  summary: string;
+  masteryScore?: number;
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  category: "Physics" | "Mathematics" | "Computer Science" | "General";
+  type: GraphNodeType;
+  masteryScore: number;
+  status: GraphMasteryStatus;
+  memoryCount: number;
+  isDue: boolean;
+  summary?: string;
+  prerequisites: string[];
+  dependents: string[];
+  connectedMistakes: ConnectedMistake[];
+  nextReviewAt?: string;
+  intervalDays?: number;
+  repetitionCount?: number;
+  easeFactor?: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: GraphEdgeType;
+  reason?: string;
+}
+
+export interface KnowledgeGraphSummary {
+  totalTopics: number;
+  mastered: number;
+  learning: number;
+  struggling: number;
+  reviewDue: number;
+  unexplored: number;
+  averageMastery: number;
+}
+
+export interface KnowledgeGraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  summary: KnowledgeGraphSummary;
+}
+
+
+/* ------------------------------------------------------------------ */
 /* Stream events (documented, not assumed)                             */
 /* ------------------------------------------------------------------ */
 

@@ -42,10 +42,12 @@ export interface RecallApi {
   removeMemory(id: string): Promise<void>;
   listDueMemories?(limit?: number): Promise<StudyMemory[]>;
   reviewMemory?(id: string, rating: 1 | 2 | 3 | 4 | 5): Promise<import("@recallai/shared-types").MemoryReviewResponse>;
+  getKnowledgeGraph?(signal?: AbortSignal): Promise<import("@recallai/shared-types").KnowledgeGraphData>;
 
   submitFeedback(messageId: string, feedback: MessageFeedback): Promise<void>;
   renameMemory?(id: string, summary: string): Promise<StudyMemory>;
 }
+
 
 export type StreamHandlers = {
   onStart?: (messageId: string, createdAt: string) => void;

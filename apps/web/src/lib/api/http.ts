@@ -225,6 +225,12 @@ export class HttpApi implements RecallApi {
     );
   }
 
+  getKnowledgeGraph(signal?: AbortSignal) {
+    return this.request<import("@recallai/shared-types").KnowledgeGraphData>("/api/graph", {
+      signal,
+    });
+  }
+
   submitFeedback(messageId: string, feedback: MessageFeedback) {
     return this.request<void>(`/api/messages/${messageId}/feedback`, {
       method: "POST",

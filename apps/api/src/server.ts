@@ -111,6 +111,16 @@ export async function createApp() {
   app.use("/api/memories", memoriesRouter(repo));
   app.use("/api/messages", feedbackRouter(repo));
 
+  app.get("/api/graph", async (_req, res, next) => {
+    try {
+      const repoMemories = await repo.listMemories();
+      const graphData = await falkorContext.getKnowledgeGraph(repoMemories);
+      res.json(graphData);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.use(notFound);
   app.use(errorHandler);
 

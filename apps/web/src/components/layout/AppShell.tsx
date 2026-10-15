@@ -9,6 +9,7 @@ import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { StudyContextPanel } from "@/components/study-context/StudyContextPanel";
+import { KnowledgeGraphModal } from "@/components/graph/KnowledgeGraphModal";
 
 const VIDEO_SRC =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260826_124724_bc041163-d651-425f-aea3-2acc1efc2c96.mp4";
@@ -50,6 +51,8 @@ export function AppShell() {
 
         {state.contextOpen && <StudyContextPanel />}
       </div>
+
+      <KnowledgeGraphModal />
 
       {state.sidebarOpen && (
         <button

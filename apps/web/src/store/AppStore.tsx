@@ -46,6 +46,7 @@ export interface AppState {
   sidebarOpen: boolean;
   sidebarCollapsed: boolean;
   contextOpen: boolean;
+  graphOpen: boolean;
   theme: "dark" | "light";
   offline: boolean;
   feedback: Record<string, MessageFeedback>;
@@ -82,6 +83,7 @@ const initialState: AppState = {
   sidebarOpen: false,
   sidebarCollapsed: false,
   contextOpen: false,
+  graphOpen: false,
   theme: "dark",
   offline: false,
   feedback: {},
@@ -249,6 +251,8 @@ export interface AppApi {
   toggleSidebar(v?: boolean): void;
   toggleCollapsed(): void;
   toggleContext(v?: boolean): void;
+  toggleGraph(v?: boolean): void;
+  launchTopicQuiz(topic: string): Promise<void>;
   setTheme(t: "dark" | "light"): void;
 
   setDraft(text: string): void;
@@ -865,6 +869,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "patch", value: { contextOpen: v ?? !stateRef.current.contextOpen } });
   }, []);
 
+  const toggleGraph = useCallback((v?: boolean) => {
+    dispatch({ type: "patch", value: { graphOpen: v ?? !stateRef.current.graphOpen } });
+  }, []);
+
+  const launchTopicQuiz = useCallback(
+    async (topic: string) => {
+      dispatch({ type: "patch", value: { graphOpen: false, responseMode: "quiz" } });
+      const prompt = `Quiz me on ${topic}. Test core prerequisites, probe for common misconceptions, and ask one conceptual question at a time.`;
+      let id = stateRef.current.activeId;
+      if (!id) {
+        dispatch({ type: "patch", value: { generation: "submitting" } });
+        try {
+          const conv = await api.createConversation();
+          dispatch({ type: "upsertConversation", item: conv });
+          dispatch({ type: "patch", value: { activeId: conv.id } });
+          id = conv.id;
+        } catch (err) {
+          dispatch({ type: "patch", value: { generation: "idle" } });
+          toast("error", err instanceof ApiError ? err.message : "Could not start quiz session.");
+          return;
+        }
+      }
+      dispatch({ type: "patch", value: { generation: "submitting" } });
+      await streamOnce(id, prompt);
+    },
+    [streamOnce, toast],
+  );
+
   const dismissToast = useCallback((id: string) => {
     dispatch({ type: "dismissToast", id });
   }, []);
@@ -872,7 +904,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        dispatch({ type: "patch", value: { sidebarOpen: false, contextOpen: false } });
+        dispatch({ type: "patch", value: { sidebarOpen: false, contextOpen: false, graphOpen: false } });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -892,6 +924,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleSidebar,
       toggleCollapsed,
       toggleContext,
+      toggleGraph,
+      launchTopicQuiz,
       setTheme,
       setDraft,
       setResponseMode,
@@ -920,6 +954,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleSidebar,
       toggleCollapsed,
       toggleContext,
+      toggleGraph,
+      launchTopicQuiz,
       setTheme,
       setDraft,
       setResponseMode,
@@ -938,6 +974,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dismissToast,
     ],
   );
+
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
