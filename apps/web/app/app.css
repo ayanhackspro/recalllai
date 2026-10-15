@@ -567,6 +567,18 @@
   flex-direction: column;
   gap: 7px;
   max-width: 100%;
+  animation: messageEnter 260ms var(--e-primary) both;
+  will-change: transform, opacity;
+}
+@keyframes messageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .msg[data-role="user"] {
   align-items: flex-end;
@@ -690,9 +702,17 @@
   margin-bottom: 12px;
 }
 .md blockquote {
-  padding-left: 14px;
-  border-left: 2px solid var(--hairline);
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent-300);
+  background: rgba(232, 134, 84, 0.05);
+  border-radius: 0 10px 10px 0;
   color: var(--text-2);
+  margin: 1em 0;
+  transition: border-color var(--t-fast) ease, background var(--t-fast) ease;
+}
+.md blockquote:hover {
+  background: rgba(232, 134, 84, 0.08);
+  border-left-color: var(--accent-100);
 }
 .md table {
   width: 100%;
@@ -740,12 +760,16 @@
   overflow-x: auto;
   overflow-y: hidden;
   max-width: 100%;
-  transition: border-color var(--t-fast) ease, background var(--t-fast) ease, box-shadow var(--t-fast) ease;
+  transition: transform 0.24s var(--e-primary),
+              border-color 0.24s ease,
+              background 0.24s ease,
+              box-shadow 0.24s ease;
 }
 .tex-display:hover {
-  border-color: rgba(251, 188, 148, 0.28);
+  transform: translateY(-2px);
+  border-color: rgba(251, 188, 148, 0.35);
   background: rgba(255, 255, 255, 0.055);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.35), 0 0 18px rgba(245, 158, 11, 0.14);
 }
 .tex-display .katex-display {
   margin: 0;
@@ -778,8 +802,12 @@
   color: var(--text-2);
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-  transition: opacity var(--t-fast) ease, background var(--t-fast) ease, color var(--t-fast) ease, transform var(--t-fast) ease;
-  transform: translateY(-2px);
+  transition: opacity 0.2s var(--e-primary),
+              transform 0.24s var(--e-primary),
+              background 0.15s ease,
+              color 0.15s ease,
+              border-color 0.15s ease;
+  transform: translateY(-4px) scale(0.96);
   z-index: 10;
 }
 
@@ -789,13 +817,17 @@
 .tex-block:focus-within .tex-copy-btn {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
 }
 
 .tex-copy-btn:hover {
   background: rgba(251, 188, 148, 0.18);
   color: var(--accent-text);
   border-color: rgba(251, 188, 148, 0.4);
+  transform: translateY(-1px) scale(1.04);
+}
+.tex-copy-btn:active {
+  transform: scale(0.94);
 }
 
 /* KaTeX ships its own colors for links and rules; align them to tokens. */
@@ -805,17 +837,25 @@
 
 .cursor {
   display: inline-block;
-  width: 7px;
-  height: 1.05em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  border-radius: 2px;
-  background: var(--accent-200);
-  animation: blink 1.05s steps(2, start) infinite;
+  width: 2.5px;
+  height: 1.15em;
+  margin-left: 3px;
+  vertical-align: -0.15em;
+  border-radius: 1.5px;
+  background: var(--accent-300);
+  box-shadow: 0 0 8px rgba(232, 134, 84, 0.8), 0 0 2px rgba(251, 188, 148, 0.9);
+  animation: cursorBlinkGlow 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
-@keyframes blink {
+@keyframes cursorBlinkGlow {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+    filter: drop-shadow(0 0 6px rgba(232, 134, 84, 0.8));
+  }
   50% {
-    opacity: 0;
+    opacity: 0.2;
+    transform: scaleY(0.85);
+    filter: drop-shadow(0 0 1px rgba(232, 134, 84, 0.2));
   }
 }
 
@@ -1014,10 +1054,31 @@ details[open] .chev {
 }
 
 .memory-mastery-fill {
+  position: relative;
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #f59e0b, #10b981);
-  transition: width 0.3s ease;
+  transition: width 0.4s var(--e-primary);
+  overflow: hidden;
+}
+
+.memory-mastery-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: barShimmer 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes barShimmer {
+  0% { transform: translateX(-100%); }
+  60%, 100% { transform: translateX(200%); }
 }
 
 .memory-due-pill {
@@ -1059,7 +1120,7 @@ details[open] .chev {
 .review-btn {
   flex: 1;
   min-width: 44px;
-  padding: 3px 6px;
+  padding: 4px 6px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1068,13 +1129,23 @@ details[open] .chev {
   font-weight: 500;
   cursor: pointer;
   text-align: center;
-  transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+  transition: background var(--t-fast) ease,
+              color var(--t-fast) ease,
+              border-color var(--t-fast) ease,
+              transform 0.16s var(--e-primary),
+              box-shadow 0.16s ease;
 }
 
 .review-btn:hover {
   background: rgba(251, 188, 148, 0.2);
   color: var(--accent-text);
   border-color: rgba(251, 188, 148, 0.4);
+  transform: translateY(-1.5px) scale(1.04);
+  box-shadow: 0 4px 12px rgba(232, 134, 84, 0.25);
+}
+
+.review-btn:active {
+  transform: scale(0.93);
 }
 
 /* ------------------------------------------------------------
@@ -1136,12 +1207,17 @@ details[open] .chev {
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: transform var(--t-fast) var(--e-soft),
-    box-shadow var(--t-fast) ease;
+  transition: transform 0.18s var(--e-primary),
+              box-shadow 0.18s ease,
+              border-color 0.18s ease;
 }
 .starter:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  transform: translateY(-2px);
+  border-color: rgba(251, 188, 148, 0.25);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32), 0 0 16px rgba(245, 158, 11, 0.08);
+}
+.starter:active {
+  transform: scale(0.97) translateY(0);
 }
 .starter::after {
   content: "→";
@@ -2035,6 +2111,18 @@ details[open] .chev {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: modalSpringIn 0.32s var(--e-primary) both;
+}
+
+@keyframes modalSpringIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .graph-modal-header {
@@ -2134,11 +2222,15 @@ details[open] .chev {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--t-fast) var(--ease);
+  transition: all 0.18s var(--e-primary);
 }
 .category-pill:hover {
   background: var(--glass-2);
   color: var(--text);
+  transform: translateY(-1px);
+}
+.category-pill:active {
+  transform: scale(0.95);
 }
 .category-pill[data-active="true"] {
   background: rgba(245, 158, 11, 0.16);
@@ -2381,7 +2473,7 @@ details[open] .chev {
   flex-direction: column;
   z-index: 20;
   box-shadow: -12px 0 36px rgba(0, 0, 0, 0.6);
-  animation: slideInRight var(--t-base) var(--ease);
+  animation: slideInRight 0.32s var(--e-primary) both;
 }
 
 @keyframes slideInRight {
@@ -2508,9 +2600,24 @@ details[open] .chev {
   margin-top: 4px;
 }
 .mastery-meter-fill {
+  position: relative;
   height: 100%;
   border-radius: 999px;
-  transition: width 0.4s var(--ease);
+  transition: width 0.4s var(--e-primary);
+  overflow: hidden;
+}
+.mastery-meter-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: barShimmer 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 .mastery-meter-fill[data-status="mastered"] {
   background: #10b981;
@@ -2630,12 +2737,16 @@ details[open] .chev {
   color: var(--text-2);
   font-size: 12px;
   cursor: pointer;
-  transition: all var(--t-fast) var(--ease);
+  transition: all 0.2s var(--e-primary);
 }
 .concept-chip:hover {
   background: var(--glass-2);
   color: var(--text);
   border-color: rgba(245, 158, 11, 0.35);
+  transform: translateY(-1px);
+}
+.concept-chip:active {
+  transform: scale(0.96);
 }
 .prereq-chip {
   border-color: rgba(56, 189, 248, 0.25);
@@ -2643,7 +2754,8 @@ details[open] .chev {
 }
 .prereq-chip:hover {
   border-color: rgba(56, 189, 248, 0.5);
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+  transform: translateX(3px);
 }
 .unlock-chip {
   border-color: rgba(245, 158, 11, 0.25);
@@ -2651,7 +2763,8 @@ details[open] .chev {
 }
 .unlock-chip:hover {
   border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+  transform: translateX(3px);
 }
 
 .empty-sub {
@@ -2731,5 +2844,27 @@ details[open] .chev {
   }
   .graph-subtitle {
     display: none;
+  }
+}
+
+/* ============================================================
+   Accessibility: prefers-reduced-motion fallback
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .cursor {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .memory-mastery-fill::after,
+  .mastery-meter-fill::after {
+    display: none !important;
   }
 }
