@@ -632,12 +632,17 @@ export function KnowledgeGraphCanvas({
       draggedNodeRef.current.vx = 0;
       draggedNodeRef.current.vy = 0;
       simAlphaRef.current = Math.max(simAlphaRef.current, 0.3);
-    } else if (panStartRef.current) {
-      setTransform((prev) => ({
-        ...prev,
-        x: e.clientX - panStartRef.current!.x,
-        y: e.clientY - panStartRef.current!.y,
-      }));
+    } else {
+      const pan = panStartRef.current;
+      if (pan) {
+        const nextX = e.clientX - pan.x;
+        const nextY = e.clientY - pan.y;
+        setTransform((prev) => ({
+          ...prev,
+          x: nextX,
+          y: nextY,
+        }));
+      }
     }
   };
 
@@ -651,6 +656,13 @@ export function KnowledgeGraphCanvas({
     draggedNodeRef.current = null;
     panStartRef.current = null;
     isDraggingRef.current = false;
+  };
+
+  const handleMouseLeave = () => {
+    draggedNodeRef.current = null;
+    panStartRef.current = null;
+    isDraggingRef.current = false;
+    setHoveredNodeId(null);
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -681,6 +693,7 @@ export function KnowledgeGraphCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
       />
     </div>
