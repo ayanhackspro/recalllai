@@ -116,7 +116,7 @@ export function KnowledgeGraphCanvas({
           y: existing.y,
           vx: existing.vx,
           vy: existing.vy,
-          radius: n.id === selectedNodeId ? 28 : 22,
+          radius: 22,
         };
       }
 
@@ -138,7 +138,7 @@ export function KnowledgeGraphCanvas({
         y: cy + Math.sin(angle) * dist + (Math.random() - 0.5) * 40,
         vx: 0,
         vy: 0,
-        radius: n.id === selectedNodeId ? 28 : 22,
+        radius: 22,
       };
     });
 
@@ -166,7 +166,7 @@ export function KnowledgeGraphCanvas({
       }
     }
     particlesRef.current = newParticles;
-  }, [nodes, edges, selectedNodeId]);
+  }, [nodes, edges]);
 
   // Handle focus snap when selectedNodeId or searchFilter changes
   useEffect(() => {

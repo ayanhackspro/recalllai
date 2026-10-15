@@ -178,24 +178,30 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
       await repo.addMessage(assistant);
 
       let acc = "";
-      for await (const piece of provider.stream(
-        {
-          content: body.content,
-          responseMode: body.responseMode,
-          attachments: turn.attachments as never,
-          readyAttachments: turn.readyAttachments as never,
-          memories: turn.memories,
-          history: turn.history,
-          previousSession: turn.previousSession,
-        },
-        new AbortController().signal,
-      )) {
-        acc += piece;
-      }
+      try {
+        for await (const piece of provider.stream(
+          {
+            content: body.content,
+            responseMode: body.responseMode,
+            attachments: turn.attachments as never,
+            readyAttachments: turn.readyAttachments as never,
+            memories: turn.memories,
+            history: turn.history,
+            previousSession: turn.previousSession,
+          },
+          new AbortController().signal,
+        )) {
+          acc += piece;
+        }
 
-      await repo.updateMessage(messageId, { content: acc, status: "complete" });
-      await repo.linkMemoriesToMessage(messageId, turn.memories.map((m) => m.id));
-      if (turn.note) await repo.setContextNote(messageId, turn.note);
+        await repo.updateMessage(messageId, { content: acc, status: "complete" });
+        await repo.linkMemoriesToMessage(messageId, turn.memories.map((m) => m.id));
+        if (turn.note) await repo.setContextNote(messageId, turn.note);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "The answer could not be generated.";
+        await repo.updateMessage(messageId, { status: "error", error: errMsg }).catch(() => {});
+        throw err;
+      }
 
       const response: SendMessageResponse = {
         conversationId: param(req, "id"),
@@ -234,11 +240,12 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
 
+    let messageId: string | undefined;
     try {
       const body = sendSchema.parse(req.body) as SendMessageRequest;
       const turn = await beginTurn(param(req, "id"), body);
 
-      const messageId = crypto.randomUUID();
+      messageId = crypto.randomUUID();
       const createdAt = new Date().toISOString();
       await repo.addMessage({
         id: messageId,
@@ -281,10 +288,16 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
     } catch (err) {
       if (controller.signal.aborted) {
         // Client went away mid-generation. Nothing to report.
+        if (messageId) {
+          await repo.updateMessage(messageId, { status: "complete" }).catch(() => {});
+        }
       } else {
         const message =
           err instanceof Error ? err.message : "The answer could not be generated.";
         console.error("[api] stream error:", err);
+        if (messageId) {
+          await repo.updateMessage(messageId, { status: "error", error: message }).catch(() => {});
+        }
         send({ type: "error", message });
       }
     } finally {

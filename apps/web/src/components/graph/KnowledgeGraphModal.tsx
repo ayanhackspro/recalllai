@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Network, RefreshCw, Search, X } from "lucide-react";
 import type { KnowledgeGraphData, GraphNode } from "@recallai/shared-types";
 import { api } from "@/lib/api";
@@ -18,6 +18,8 @@ export function KnowledgeGraphModal() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const selectedNodeIdRef = useRef<string | null>(null);
+  selectedNodeIdRef.current = selectedNode?.id ?? null;
 
   const fetchGraph = useCallback(async () => {
     setLoading(true);
@@ -26,8 +28,8 @@ export function KnowledgeGraphModal() {
       if (api.getKnowledgeGraph) {
         const res = await api.getKnowledgeGraph();
         setData(res);
-        if (selectedNode) {
-          const fresh = res.nodes.find((n) => n.id === selectedNode.id);
+        if (selectedNodeIdRef.current) {
+          const fresh = res.nodes.find((n) => n.id === selectedNodeIdRef.current);
           if (fresh) setSelectedNode(fresh);
         }
       }
@@ -36,13 +38,29 @@ export function KnowledgeGraphModal() {
     } finally {
       setLoading(false);
     }
-  }, [selectedNode]);
+  }, []);
 
   useEffect(() => {
     if (state.graphOpen) {
       void fetchGraph();
     }
   }, [state.graphOpen, fetchGraph]);
+
+  // Keyboard shortcut: Escape closes inspector first, then modal
+  useEffect(() => {
+    if (!state.graphOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (selectedNode) {
+          setSelectedNode(null);
+        } else {
+          toggleGraph(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [state.graphOpen, selectedNode, toggleGraph]);
 
   const categories = useMemo(() => {
     return ["All", "Physics", "Chemistry", "Mathematics", "Computer Science"];
@@ -74,6 +92,11 @@ export function KnowledgeGraphModal() {
       role="dialog"
       aria-modal="true"
       aria-label="Academic Knowledge Graph & Mastery Heatmap"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          toggleGraph(false);
+        }
+      }}
     >
       <div className="graph-modal">
         {/* Header Bar */}
