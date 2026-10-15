@@ -45,7 +45,7 @@ export function KnowledgeGraphModal() {
   }, [state.graphOpen, fetchGraph]);
 
   const categories = useMemo(() => {
-    return ["All", "Physics", "Mathematics", "Computer Science"];
+    return ["All", "Physics", "Chemistry", "Mathematics", "Computer Science"];
   }, []);
 
   const handleSelectTopicName = useCallback(

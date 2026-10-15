@@ -167,7 +167,7 @@ export interface ConnectedMistake {
 export interface GraphNode {
   id: string;
   label: string;
-  category: "Physics" | "Mathematics" | "Computer Science" | "General";
+  category: "Physics" | "Chemistry" | "Mathematics" | "Computer Science" | "General";
   type: GraphNodeType;
   masteryScore: number;
   status: GraphMasteryStatus;

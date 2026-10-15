@@ -124,9 +124,11 @@ export function KnowledgeGraphCanvas({
       const categoryAngle =
         n.category === "Physics"
           ? 0
-          : n.category === "Mathematics"
-            ? (2 * Math.PI) / 3
-            : (4 * Math.PI) / 3;
+          : n.category === "Chemistry"
+            ? Math.PI / 2
+            : n.category === "Mathematics"
+              ? Math.PI
+              : (3 * Math.PI) / 2;
       const angle = categoryAngle + (i % 6) * 0.45;
       const dist = 160 + (i % 4) * 55;
 

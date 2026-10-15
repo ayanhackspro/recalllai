@@ -70,6 +70,14 @@ const CONCEPT_MAPPINGS: Array<{ re: RegExp; topic: string; category: string }> =
   { re: /\b(derivative|derivatives|differentiation|chain rule|gradient)\b/i, topic: "Derivatives", category: "Mathematics" },
   { re: /\b(integral|integrals|integration|anti[- ]derivative)\b/i, topic: "Integrals", category: "Mathematics" },
 
+  // Chemistry
+  { re: /\b(chemical equilibrium|equilibrium constant|le chatelier|reaction quotient|k_?c|k_?p)\b/i, topic: "Chemical Equilibrium", category: "Chemistry" },
+  { re: /\b(thermodynamics|gibbs|gibbs free energy|enthalpy|entropy|spontaneous|helmholtz)\b/i, topic: "Thermodynamics & Gibbs Free Energy", category: "Chemistry" },
+  { re: /\b(reaction kinetics|rate law|reaction rate|activation energy|arrhenius|rate constant|half[- ]life)\b/i, topic: "Reaction Kinetics", category: "Chemistry" },
+  { re: /\b(electrochemistry|nernst|galvanic|redox|reduction potential|electrolysis|faraday'?s? law)\b/i, topic: "Electrochemistry", category: "Chemistry" },
+  { re: /\b(acid[- ]base|ph|poh|buffer|henderson[- ]hasselbalch|titration|ka|kb|kw)\b/i, topic: "Acid-Base Equilibria", category: "Chemistry" },
+  { re: /\b(organic mechanism|nucleophil|electrophil|sn1|sn2|e1|e2|carbocation|resonance|stereochemistry)\b/i, topic: "Organic Reaction Mechanisms", category: "Chemistry" },
+
   // Computer Science
   { re: /\b(recursion|recursive|base case|recurrence)\b/i, topic: "Recursion", category: "Computer Science" },
   { re: /\b(call stack|stack frame|stack overflow)\b/i, topic: "Call Stack", category: "Computer Science" },
@@ -188,6 +196,36 @@ const CORE_ONTOLOGY_EDGES = [
     type: "CONNECTED_TO",
     reason: "Dynamic programming memoization optimizes exponential recursive searches down to polynomial time.",
   },
+  {
+    from: "Thermodynamics & Gibbs Free Energy",
+    to: "Chemical Equilibrium",
+    type: "PREREQUISITE_OF",
+    reason: "Standard Gibbs free energy change delta G° = -RT ln(K) governs the equilibrium state of chemical reactions.",
+  },
+  {
+    from: "Thermodynamics & Gibbs Free Energy",
+    to: "Electrochemistry",
+    type: "PREREQUISITE_OF",
+    reason: "Electrical cell work relates to Gibbs free energy via delta G = -nFE_cell.",
+  },
+  {
+    from: "Chemical Equilibrium",
+    to: "Acid-Base Equilibria",
+    type: "PREREQUISITE_OF",
+    reason: "Acid dissociation constants Ka and buffer systems are direct applications of chemical equilibrium.",
+  },
+  {
+    from: "Reaction Kinetics",
+    to: "Chemical Equilibrium",
+    type: "CONNECTED_TO",
+    reason: "Dynamic chemical equilibrium is achieved when forward and reverse reaction rates equate.",
+  },
+  {
+    from: "Reaction Kinetics",
+    to: "Organic Reaction Mechanisms",
+    type: "CONNECTED_TO",
+    reason: "Reaction kinetics (rate-determining steps, activation barriers, SN1 vs SN2) dictate organic mechanism pathways.",
+  },
 ];
 
 /** Rich academic definitions for concept inspector panels. */
@@ -206,12 +244,19 @@ export const TOPIC_SUMMARIES: Record<string, string> = {
   "Linear Algebra": "Study of vector spaces, linear transformations, basis vectors, span, null spaces, and matrix representations.",
   "Derivatives": "Instantaneous rate of change of real functions, limits of difference quotients, and gradient fields in multivariable calculus.",
   "Integrals": "Accumulation of continuous quantities, signed area under curves, Riemann sums, and the Fundamental Theorem of Calculus.",
+  "Chemical Equilibrium": "Dynamic equilibrium state where forward and reverse reaction rates equate, characterized by equilibrium constant K and Le Chatelier shifts.",
+  "Thermodynamics & Gibbs Free Energy": "Macroscopic state functions (H, S, G) quantifying chemical spontaneity, thermal exchange, and the fundamental relation delta G = delta H - T delta S.",
+  "Reaction Kinetics": "Rates of chemical transformations, empirical rate laws, transition state theory, and Arrhenius activation energy barriers k = A exp(-Ea / RT).",
+  "Electrochemistry": "Coupled oxidation-reduction reactions driving electron transfer across electrochemical cells, governed by Nernst equation and Faraday's laws.",
+  "Acid-Base Equilibria": "Proton transfer equilibria in aqueous solutions, pH calculations, buffer capacity, and the Henderson-Hasselbalch relation.",
+  "Organic Reaction Mechanisms": "Stepwise electron curved-arrow pushing pathways, nucleophilic substitution (SN1/SN2), elimination (E1/E2), and reactive intermediate stabilities.",
   "Recursion": "Computational method where a function solves a problem by calling itself with reduced input size towards one or more well-defined base cases.",
   "Call Stack": "Last-in, first-out memory segment allocating activation frames for active subroutines, parameter passing, and return addresses.",
   "Dynamic Programming": "Optimization paradigm combining optimal substructure and overlapping subproblems via memoization or bottom-up tabulation.",
   "Trees": "Hierarchical non-linear graph data structures without cycles, including Binary Search Trees, self-balancing AVL/Red-Black trees, and Heaps.",
   "Time Complexity": "Asymptotic upper (Big-O), lower (Omega), and tight (Theta) bounds quantifying execution time growth as input size n approaches infinity.",
 };
+
 
 export class FalkorContextService {
   private client: FalkorDB | null = null;
