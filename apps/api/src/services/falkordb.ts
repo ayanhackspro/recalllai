@@ -350,12 +350,12 @@ export class FalkorContextService {
 
     try {
       const nowIso = memory.updatedAt || new Date().toISOString();
-      const derived = this.extractTopics(memory.summary);
+      const derived = this.extractTopics(memory.summary + " " + (memory.label || ""));
       const targetTopics = options?.topics?.length
         ? options.topics
         : derived.topics.length
           ? derived.topics
-          : [];
+          : derived.keywords.slice(0, 2).map((k) => k.charAt(0).toUpperCase() + k.slice(1));
 
       // 1. Upsert Memory node
       await this.graph.query(
@@ -381,7 +381,7 @@ export class FalkorContextService {
         },
       );
 
-      // 2. Link to Topics
+      // 2. Link to Topics (standard or dynamically extracted)
       for (const topicName of targetTopics) {
         await this.graph.query(
           `MERGE (t:Topic {name: $topicName})
@@ -458,33 +458,36 @@ export class FalkorContextService {
    * Retrieves relevant memory items using graph traversal.
    *
    * Traversal order:
-   * 1. Direct matches: Memories directly linked to topics in the query.
+   * 1. Direct matches: Memories directly linked to topics or keywords in the query.
    * 2. Connected concept matches (1-hop / 2-hop): Memories linked to topics that
    *    are prerequisites or connected concepts of topics in the query.
-   * 3. Explains the connection in plain language using edge metadata.
+   * 3. Broad/continuity fallback: If querying in a new chat or asking general continuity questions,
+   *    retrieves the student's durable active goals and mistakes.
+   * 4. Explains the connection in plain language using edge metadata.
    */
   async retrieveContext(query: string, limit = 4): Promise<GraphContextRetrieval> {
     if (!this.graph) return { items: [], source: "fallback" };
 
     const { topics, keywords } = this.extractTopics(query);
-    if (topics.length === 0 && keywords.length === 0) {
-      return { items: [], source: "falkordb" };
-    }
-
     const topicNamesLower = topics.map((t) => t.toLowerCase());
     const candidates: Map<string, GraphRow> = new Map();
     const explanationNotes: string[] = [];
 
     try {
-      // 1. Direct matches
+      // 1. Direct matches across topics and keywords
       if (topicNamesLower.length > 0 || keywords.length > 0) {
         const directRes = await this.graph.query<GraphRow>(
-          `MATCH (m:Memory)-[r:RELATES_TO|TARGETS_GOAL|RECURRING_MISTAKE_IN]->(t:Topic)
-           WHERE toLower(t.name) IN $topics OR any(kw IN $keywords WHERE toLower(m.summary) CONTAINS kw)
+          `MATCH (m:Memory)
+           OPTIONAL MATCH (m)-[r:RELATES_TO|TARGETS_GOAL|RECURRING_MISTAKE_IN]->(t:Topic)
+           WITH m, collect(coalesce(t.name, '')) AS topicNames, collect(type(r)) AS relTypes
+           WHERE any(tName IN topicNames WHERE toLower(tName) IN $topics)
+              OR any(kw IN $keywords WHERE toLower(m.summary) CONTAINS kw)
+              OR any(kw IN $keywords WHERE toLower(m.label) CONTAINS kw)
            RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary,
                   m.source AS source, m.updatedAt AS updatedAt,
-                  t.name AS topicName, type(r) AS relType, 1 AS distance, '' AS edgeReason
-           ORDER BY CASE m.type WHEN 'mistake' THEN 1 WHEN 'goal' THEN 2 ELSE 3 END
+                  coalesce(head(topicNames), 'Study Context') AS topicName,
+                  coalesce(head(relTypes), 'RELATES_TO') AS relType, 1 AS distance, '' AS edgeReason
+           ORDER BY CASE m.type WHEN 'mistake' THEN 1 WHEN 'goal' THEN 2 ELSE 3 END, m.updatedAt DESC
            LIMIT $limit`,
           {
             params: {
@@ -515,11 +518,11 @@ export class FalkorContextService {
         const connectedRes = await this.graph.query<GraphRow>(
           `MATCH (m:Memory)-[r:RELATES_TO|TARGETS_GOAL|RECURRING_MISTAKE_IN]->(t1:Topic)-[c:CONNECTED_TO|PREREQUISITE_OF]-(t2:Topic)
            WHERE toLower(t2.name) IN $topics AND NOT toLower(t1.name) IN $topics
-           RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary,
+           RETURN DISTINCT m.id AS id, m.type AS type, m.label AS label, m.summary AS summary,
                   m.source AS source, m.updatedAt AS updatedAt,
                   t1.name AS topicName, t2.name AS matchedTopicName,
                   type(r) AS relType, 2 AS distance, coalesce(c.reason, '') AS edgeReason
-           ORDER BY CASE m.type WHEN 'mistake' THEN 1 WHEN 'goal' THEN 2 ELSE 3 END
+           ORDER BY CASE m.type WHEN 'mistake' THEN 1 WHEN 'goal' THEN 2 ELSE 3 END, m.updatedAt DESC
            LIMIT $limit`,
           {
             params: {
@@ -540,6 +543,43 @@ export class FalkorContextService {
               }
             } else {
               explanationNotes.push(`Connected previous study of ${row.topicName} with ${row.matchedTopicName}.`);
+            }
+          }
+        }
+      }
+
+      // 3. Fallback for continuity / general prompts across chats
+      // (e.g. "Where should I pick up next?", "What are my goals?", "Help me study", "Quiz me on what I'm weak at")
+      if (candidates.size === 0) {
+        const isBroadOrContinuity =
+          query.trim().length === 0 ||
+          /^(where|what|how|quiz|continue|start|revise|study|pick|review|remember|who|can you|help)\b/i.test(query.trim()) ||
+          (topics.length === 0 && keywords.length <= 2);
+
+        if (isBroadOrContinuity) {
+          const fallbackRes = await this.graph.query<GraphRow>(
+            `MATCH (m:Memory)
+             OPTIONAL MATCH (m)-[r:RELATES_TO|TARGETS_GOAL|RECURRING_MISTAKE_IN]->(t:Topic)
+             WITH m, collect(coalesce(t.name, '')) AS topicNames, collect(type(r)) AS relTypes
+             RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary,
+                    m.source AS source, m.updatedAt AS updatedAt,
+                    coalesce(head(topicNames), 'Your study history') AS topicName,
+                    coalesce(head(relTypes), 'RELATES_TO') AS relType, 1 AS distance, '' AS edgeReason
+             ORDER BY CASE m.type WHEN 'goal' THEN 1 WHEN 'mistake' THEN 2 ELSE 3 END, m.updatedAt DESC
+             LIMIT $limit`,
+            { params: { limit } },
+          );
+
+          for (const row of fallbackRes.data ?? []) {
+            if (!candidates.has(row.id)) {
+              candidates.set(row.id, row);
+              if (row.type === "goal") {
+                explanationNotes.push(`Anchored in your recorded study goal.`);
+              } else if (row.type === "mistake") {
+                explanationNotes.push(`Kept your recurring mistake in mind.`);
+              } else {
+                explanationNotes.push(`Referenced your recorded study notes.`);
+              }
             }
           }
         }

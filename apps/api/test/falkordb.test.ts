@@ -60,6 +60,31 @@ async function runTests() {
   assert.equal(recorded?.type, "mistake");
   assert.ok(recorded?.summary.includes("eigenvalue determinants wrong"));
 
+  // 4. Personal fact & difficulty recording
+  const recordedFact = await maybeRecordMemory(repo, {
+    conversationId: "conv_123",
+    messageId: "msg_124",
+    text: "remember that my study code is Aman Yadav",
+  }, falkor);
+  console.log("Recorded personal fact:", recordedFact);
+  assert.ok(recordedFact !== null, "Should record personal study fact");
+  assert.ok(recordedFact?.summary.includes("Aman Yadav"));
+
+  const recordedStruggle = await maybeRecordMemory(repo, {
+    conversationId: "conv_123",
+    messageId: "msg_125",
+    text: "I struggle with friction on ramps",
+  }, falkor);
+  console.log("Recorded struggle:", recordedStruggle);
+  assert.ok(recordedStruggle !== null, "Should record struggle as mistake/difficulty");
+
+  // 5. Cross-chat / continuity query fallback
+  console.log("--- Testing Continuity Retrieval in New/Broad Chat ---");
+  const continuity = await retrieveMemories(repo, "Where should I pick up next?", 4, falkor);
+  console.log("Continuity retrieved:", continuity);
+  assert.ok(continuity.items.length > 0, "Should retrieve active memories for broad continuity query");
+  assert.ok(continuity.note?.includes("study goals and recorded notes"));
+
   console.log("\n All FalkorDB context service checks passed successfully!");
 }
 

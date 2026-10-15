@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   Attachment,
   ChatMessage,
@@ -10,11 +13,13 @@ import type { Repository } from "./repository.js";
 
 /**
  * In-memory implementation used when DATABASE_URL is empty.
- *
- * Same interface, same behaviour, no persistence across restarts. This exists
- * so the API can be run and the whole stack demonstrated before anyone
- * provisions a database.
+ * Persists to a local JSON file (apps/api/data/store.json) so conversations,
+ * messages and local records survive restarts even without PostgreSQL.
  */
+
+const here = dirname(fileURLToPath(import.meta.url));
+const dataDir = resolve(here, "../../data");
+const storeFile = resolve(dataDir, "store.json");
 
 interface StoredAttachment extends Attachment {
   conversationId?: string;
@@ -44,10 +49,55 @@ export class MemoryRepository implements Repository {
   private feedback = new Map<string, MessageFeedback>();
 
   async init(): Promise<void> {
-    /* nothing to set up */
+    try {
+      if (existsSync(storeFile)) {
+        const raw = readFileSync(storeFile, "utf8");
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.conversations)) {
+          for (const c of data.conversations) this.conversations.set(c.id, c);
+        }
+        if (data.messages && typeof data.messages === "object") {
+          for (const [k, v] of Object.entries(data.messages)) {
+            if (Array.isArray(v)) this.messages.set(k, v as StoredMessage[]);
+          }
+        }
+        if (Array.isArray(data.attachments)) {
+          for (const a of data.attachments) this.attachments.set(a.id, a);
+        }
+        if (Array.isArray(data.memories)) {
+          for (const m of data.memories) this.memories.set(m.id, m);
+        }
+        if (data.notes && typeof data.notes === "object") {
+          for (const [k, v] of Object.entries(data.notes)) {
+            if (typeof v === "string") this.notes.set(k, v);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[memory-repo] Error loading store.json:", err);
+    }
+  }
+
+  private save(): void {
+    try {
+      if (!existsSync(dataDir)) {
+        mkdirSync(dataDir, { recursive: true });
+      }
+      const data = {
+        conversations: [...this.conversations.values()],
+        messages: Object.fromEntries(this.messages.entries()),
+        attachments: [...this.attachments.values()],
+        memories: [...this.memories.values()],
+        notes: Object.fromEntries(this.notes.entries()),
+      };
+      writeFileSync(storeFile, JSON.stringify(data, null, 2), "utf8");
+    } catch {
+      // non-fatal in-memory fallback
+    }
   }
 
   async close(): Promise<void> {
+    this.save();
     this.conversations.clear();
     this.messages.clear();
     this.attachments.clear();
@@ -68,6 +118,7 @@ export class MemoryRepository implements Repository {
     const conv: Conversation = { id: uuid(), title, updatedAt: nowIso() };
     this.conversations.set(conv.id, conv);
     this.messages.set(conv.id, []);
+    this.save();
     return conv;
   }
 
@@ -80,7 +131,17 @@ export class MemoryRepository implements Repository {
     if (!conv) return null;
     conv.title = title;
     conv.updatedAt = nowIso();
+    this.save();
     return conv;
+  }
+
+  async setConversationPreview(id: string, preview: string): Promise<void> {
+    const conv = this.conversations.get(id);
+    if (conv) {
+      conv.preview = preview;
+      conv.updatedAt = nowIso();
+      this.save();
+    }
   }
 
   async deleteConversation(id: string): Promise<boolean> {
@@ -89,6 +150,7 @@ export class MemoryRepository implements Repository {
     for (const [attId, att] of this.attachments) {
       if (att.conversationId === id) this.attachments.delete(attId);
     }
+    this.save();
     return true;
   }
 

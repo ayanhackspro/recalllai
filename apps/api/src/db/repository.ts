@@ -24,6 +24,7 @@ export interface Repository {
   createConversation(title?: string): Promise<Conversation>;
   getConversation(id: string): Promise<Conversation | null>;
   renameConversation(id: string, title: string): Promise<Conversation | null>;
+  setConversationPreview(id: string, preview: string): Promise<void>;
   deleteConversation(id: string): Promise<boolean>;
 
   listMessages(conversationId: string): Promise<ChatMessage[]>;

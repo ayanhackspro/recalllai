@@ -52,6 +52,10 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
     });
 
     // Derive a title from the first real question.
+    const textSnippet = body.content.trim().slice(0, 80);
+    if (textSnippet) {
+      await repo.setConversationPreview(conversationId, textSnippet);
+    }
     if (conv.title === "New conversation") {
       const t = body.content.trim();
       if (t) {

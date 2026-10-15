@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { PgRepository } from "./db/pg-repository.js";
 import { MemoryRepository } from "./db/memory-repository.js";
 import type { Repository } from "./db/repository.js";
+import { keywordsOf } from "./db/repository.js";
 import { LocalAnswerProvider } from "./services/answer.js";
 import { OllamaAnswerProvider } from "./services/ollama.js";
 import { conversationsRouter } from "./routes/conversations.js";
@@ -26,6 +27,21 @@ export async function createApp() {
   await repo.init();
   await ensureDir(config.uploadDir);
   await falkorContext.init();
+
+  // Synchronize persisted FalkorDB memories into repository so they match even on in-memory restarts
+  if (falkorContext.isConnected) {
+    try {
+      const falkorMems = await falkorContext.listMemories();
+      for (const m of falkorMems) {
+        await repo.upsertMemory({
+          ...m,
+          keywords: keywordsOf(m.summary + " " + (m.label || "")),
+        });
+      }
+    } catch (err) {
+      console.warn("[api] Error syncing FalkorDB memories to repo:", err);
+    }
+  }
 
   // Ollama local LLM provider (qwen2.5:1.5b) with graceful auto-fallback
   const ollamaProvider = new OllamaAnswerProvider();

@@ -66,27 +66,41 @@ export async function retrieveMemories(
 
   // 2. Secondary fallback: Repository keyword search
   const keywords = keywordsOf(query);
-  if (keywords.length === 0) return { items: [] };
-
-  const items = await repo.findMemoriesByKeywords(keywords, limit);
-  if (items.length === 0) return { items: [] };
-
-  // Explain the selection in plain language, never with node ids or Cypher.
-  const notes: string[] = [];
-  for (const pattern of SIGNAL_PATTERNS) {
-    if (pattern.re.test(query)) notes.push(pattern.note);
+  if (keywords.length > 0) {
+    const items = await repo.findMemoriesByKeywords(keywords, limit);
+    if (items.length > 0) {
+      const notes: string[] = [];
+      for (const pattern of SIGNAL_PATTERNS) {
+        if (pattern.re.test(query)) notes.push(pattern.note);
+      }
+      if (notes.length === 0) {
+        notes.push("Used notes from topics you have studied before.");
+      }
+      return { items, note: [...new Set(notes)].join(" ") };
+    }
   }
-  if (notes.length === 0) {
-    notes.push("Used notes from topics you have studied before.");
+
+  // 3. Fallback for broad/continuity queries (e.g. "Where should I pick up next?", "What are my goals?")
+  const isBroadOrContinuity =
+    query.trim().length === 0 ||
+    /^(where|what|how|quiz|continue|start|revise|study|pick|review|remember|who|can you|help)\b/i.test(query.trim());
+
+  if (isBroadOrContinuity) {
+    const globalItems = await repo.listMemories();
+    if (globalItems.length > 0) {
+      return {
+        items: globalItems.slice(0, limit),
+        note: "Anchored in your ongoing study goals and recorded notes.",
+      };
+    }
   }
 
-  return { items, note: [...new Set(notes)].join(" ") };
+  return { items: [] };
 }
 
 /**
- * Records a learning signal from the user's own message. Called only when the
- * message contains something durable — a stated goal, an admitted recurring
- * error — so the store does not fill up with noise.
+ * Records a learning signal from the user's own message.
+ * Captures recurring mistakes, study goals, difficulties, preferences, and personal facts.
  */
 export async function maybeRecordMemory(
   repo: Repository,
@@ -95,19 +109,58 @@ export async function maybeRecordMemory(
 ): Promise<StudyMemory | null> {
   const { text } = input;
 
-  // "I keep getting X wrong" / "I always forget X" / "help me with X"
-  const mistake = text.match(
-    /\b(?:keep|always|repeatedly|constantly)\s+(?:getting|forgetting|mixing up|confusing)\b([^.,;!?]{3,80})/i,
-  );
-  if (mistake) {
-    // Drop a leading demonstrative so "I keep getting this wrong" does not
-    // store the useless subject "this wrong".
-    const subject = mistake[1]!.replace(/^\s*(?:this|that|it|them)\s+/i, "").trim();
+  // 1. Personal fact / preference / explicit remember request
+  // "remember that my study code is X" / "my study code is X" / "remember that I prefer Y"
+  const factMatch =
+    text.match(/\b(?:remember\s+(?:that)?|keep\s+in\s+mind\s+(?:that)?|please\s+note\s+(?:that)?)\s+([^.,;!?\n]{3,120})/i) ||
+    text.match(/\b(?:my\s+(?:study\s+code|code|student\s+id|name|major|subject|level))\s+is\s+([^.,;!?\n]{2,80})/i) ||
+    text.match(/\b(?:i\s+prefer\s+([^.,;!?\n]{3,100}))/i);
+
+  if (factMatch) {
+    const raw = factMatch[1] ?? factMatch[0];
+    const subject = raw.replace(/^\s*(?:that|me\s+to|to|my\s+(?:study\s+code|code|student\s+id|name)\s+is)\s+/i, "").trim();
+    if (subject) {
+      const memory = await repo.upsertMemory({
+        type: "preference",
+        label: "Saved study fact",
+        summary: text.toLowerCase().includes("study code")
+          ? `Your study code is ${subject}.`
+          : `You noted: ${subject}.`,
+        source: "learned",
+        conversationId: input.conversationId,
+        messageId: input.messageId,
+        keywords: keywordsOf(subject + " " + text),
+      });
+
+      if (falkor.isConnected) {
+        await falkor.upsertMemory(memory, {
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          keywords: keywordsOf(subject + " " + text),
+        });
+      }
+
+      return memory;
+    }
+  }
+
+  // 2. Mistakes / Difficulties / Struggles
+  // "I keep getting X wrong" / "I struggle with Y" / "I find Z difficult"
+  const mistakeMatch =
+    text.match(/\b(?:keep|always|repeatedly|constantly)\s+(?:getting|forgetting|mixing up|confusing|messing up|failing)\b([^.,;!?\n]{3,80})/i) ||
+    text.match(/\b(?:struggle|struggling|trouble|difficulty|hard\s+time|confused|stuck)\s+(?:with|on|about|understanding)\b([^.,;!?\n]{3,80})/i) ||
+    text.match(/\b(?:find|finding)\s+([^.,;!?\n]{3,60})\s+(?:difficult|confusing|hard|tricky)\b/i) ||
+    text.match(/\b(?:i\s+can(?:'|no)?t\s+(?:understand|grasp|figure out))\s+([^.,;!?\n]{3,80})/i) ||
+    text.match(/\b(?:i\s+make\s+mistakes?\s+(?:on|in|with))\s+([^.,;!?\n]{3,80})/i);
+
+  if (mistakeMatch) {
+    const raw = mistakeMatch[1] ?? mistakeMatch[0];
+    const subject = raw.replace(/^\s*(?:this|that|it|them|my|the)\s+/i, "").trim();
     if (subject) {
       const memory = await repo.upsertMemory({
         type: "mistake",
         label: "Recurring mistake",
-        summary: `You reported repeatedly getting this wrong: ${subject}.`,
+        summary: `You reported difficulty or getting this wrong: ${subject}.`,
         source: "learned",
         conversationId: input.conversationId,
         messageId: input.messageId,
@@ -126,17 +179,21 @@ export async function maybeRecordMemory(
     }
   }
 
-  // "my exam is on X" / "I'm revising for X"
-  const goal = text.match(
-    /\b(?:exam|test|midterm|final|deadline)\b[^.,;!?]{0,60}|\b(?:revising|studying|prepping)\s+for\s+([^.,;!?]{3,60})/i,
-  );
-  if (goal) {
-    const subject = (goal[1] ?? goal[0] ?? "").replace(/\b(my|the)\b/gi, "").trim();
+  // 3. Study goals / Revision targets
+  // "my exam is on X" / "I'm revising for Y" / "my goal is to learn Z"
+  const goalMatch =
+    text.match(/\b(?:my\s+goal\s+is|aiming\s+to|target\s+is|want\s+to\s+learn|want\s+to\s+master|planning\s+to\s+revise)\s+([^.,;!?\n]{3,80})/i) ||
+    text.match(/\b(?:exam|test|midterm|final|deadline)\b[^.,;!?\n]{0,60}|\b(?:revising|studying|prepping|preparing)\s+(?:for\s+)?([^.,;!?\n]{3,60})/i) ||
+    text.match(/\b(?:i(?:'m| am)\s+(?:preparing|studying|focusing|working)\s+(?:on|for))\s+([^.,;!?\n]{3,80})/i);
+
+  if (goalMatch) {
+    const raw = goalMatch[1] ?? goalMatch[0] ?? "";
+    const subject = raw.replace(/\b(my|the|for|on)\b/gi, "").trim();
     if (subject) {
       const memory = await repo.upsertMemory({
         type: "goal",
         label: "Current study goal",
-        summary: `You said you are studying for ${subject}.`,
+        summary: `You said you are studying or preparing for: ${subject}.`,
         source: "learned",
         conversationId: input.conversationId,
         messageId: input.messageId,

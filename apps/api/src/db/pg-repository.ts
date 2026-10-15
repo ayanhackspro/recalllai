@@ -43,7 +43,7 @@ export class PgRepository implements Repository {
 
   async listConversations(): Promise<Conversation[]> {
     const { rows } = await this.pool.query<Conversation>(
-      `SELECT id, title, created_at AS "createdAt", updated_at AS "updatedAt"
+      `SELECT id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"
          FROM conversations
         ORDER BY updated_at DESC
         LIMIT 200`,
@@ -55,7 +55,7 @@ export class PgRepository implements Repository {
     const { rows } = await this.pool.query<Conversation>(
       `INSERT INTO conversations (title)
             VALUES ($1)
-         RETURNING id, title, created_at AS "createdAt", updated_at AS "updatedAt"`,
+         RETURNING id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"`,
       [title],
     );
     return rows[0]!;
@@ -63,7 +63,7 @@ export class PgRepository implements Repository {
 
   async getConversation(id: string): Promise<Conversation | null> {
     const { rows } = await this.pool.query<Conversation>(
-      `SELECT id, title, created_at AS "createdAt", updated_at AS "updatedAt"
+      `SELECT id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"
          FROM conversations WHERE id = $1`,
       [id],
     );
@@ -75,10 +75,19 @@ export class PgRepository implements Repository {
       `UPDATE conversations
           SET title = $2, updated_at = now()
         WHERE id = $1
-      RETURNING id, title, created_at AS "createdAt", updated_at AS "updatedAt"`,
+      RETURNING id, title, preview, created_at AS "createdAt", updated_at AS "updatedAt"`,
       [id, title],
     );
     return rows[0] ?? null;
+  }
+
+  async setConversationPreview(id: string, preview: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE conversations
+          SET preview = $2, updated_at = now()
+        WHERE id = $1`,
+      [id, preview],
+    );
   }
 
   async deleteConversation(id: string): Promise<boolean> {

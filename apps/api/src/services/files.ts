@@ -68,10 +68,28 @@ export async function extractText(
   }
 
   if (mimeType === "application/pdf" || /\.pdf$/i.test(filePath)) {
-    return {
-      ok: false,
-      reason: "PDF text extraction is not wired up yet. Install a PDF parser in services/extract.ts.",
-    };
+    try {
+      const buffer = await readFile(filePath);
+      const pdfParseModule = await import("pdf-parse");
+      const pdfParse = ((pdfParseModule as any).default ?? pdfParseModule) as (buf: Buffer) => Promise<{ text: string }>;
+      const parsed = await pdfParse(buffer);
+      const text = (parsed.text ?? "")
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      if (!text) {
+        return {
+          ok: false,
+          reason: "The PDF contains no digital text layer (may be scanned images without OCR).",
+        };
+      }
+      return { ok: true, text, chars: text.length };
+    } catch (err) {
+      return {
+        ok: false,
+        reason: `Could not parse PDF: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
   }
 
   if (mimeType.startsWith("image/")) {

@@ -1,15 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { StudyContext } from "@recallai/shared-types";
+import type { StudyContext, StudyMemory } from "@recallai/shared-types";
 import type { Repository } from "../db/repository.js";
 import { asyncRoute, HttpError, param } from "./helpers.js";
+import { falkorContext } from "../services/falkordb.js";
 
 /**
  * Study context.
  *
  * Returns the memories relevant to the most recent answer in the conversation,
- * plus the plain-language reason. If the backend has nothing, it says so — the
- * endpoint never manufactures an example memory for a real session.
+ * plus the plain-language reason. If no answer has context yet (e.g. in a new chat),
+ * it returns the student's active durable study context so cross-chat continuity is preserved.
  */
 export function contextRouter(repo: Repository): Router {
   const r = Router();
@@ -37,6 +38,25 @@ export function contextRouter(repo: Repository): Router {
         }
       }
 
+      // If no answer in this conversation has context yet (e.g. in a new chat),
+      // surface active study context from FalkorDB or repository so new chats remember context.
+      let globalMemories: StudyMemory[] = [];
+      if (falkorContext.isConnected) {
+        globalMemories = await falkorContext.listMemories();
+      }
+      if (!globalMemories.length) {
+        globalMemories = await repo.listMemories();
+      }
+
+      if (globalMemories.length > 0) {
+        res.json({
+          items: globalMemories.slice(0, 4),
+          note: "Active study context remembered across your sessions.",
+          loading: false,
+        } satisfies StudyContext);
+        return;
+      }
+
       res.json({ items: [], loading: false } satisfies StudyContext);
     }),
   );
@@ -47,14 +67,19 @@ export function contextRouter(repo: Repository): Router {
     asyncRoute(async (req, res) => {
       const conv = await repo.getConversation(param(req, "id"));
       if (!conv) throw new HttpError(404, "not_found", "Conversation not found.");
+      if (falkorContext.isConnected) {
+        const mems = await falkorContext.listMemories(conv.id);
+        if (mems.length > 0) {
+          res.json(mems);
+          return;
+        }
+      }
       res.json(await repo.listMemories(conv.id));
     }),
   );
 
   return r;
 }
-
-import { falkorContext } from "../services/falkordb.js";
 
 /**
  * Mounted at /api/memories, which is where the frontend looks. A memory is
@@ -66,6 +91,13 @@ export function memoriesRouter(repo: Repository): Router {
   r.get(
     "/",
     asyncRoute(async (_req, res) => {
+      if (falkorContext.isConnected) {
+        const falkorMems = await falkorContext.listMemories();
+        if (falkorMems.length > 0) {
+          res.json(falkorMems);
+          return;
+        }
+      }
       res.json(await repo.listMemories());
     }),
   );

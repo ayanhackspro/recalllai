@@ -7,9 +7,12 @@
 CREATE TABLE IF NOT EXISTS conversations (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title       text        NOT NULL DEFAULT 'New conversation',
+  preview     text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS preview text;
 
 CREATE TABLE IF NOT EXISTS messages (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),

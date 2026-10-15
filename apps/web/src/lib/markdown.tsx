@@ -25,21 +25,44 @@ type Block =
   | { kind: "code"; lang?: string; text: string }
   | { kind: "quote"; text: string }
   | { kind: "hr" }
-  | { kind: "table"; head: string[]; rows: string[][] };
+  | { kind: "table"; head: string[]; rows: string[][] }
+  | { kind: "display-math"; text: string };
+
+const MATH_ENVIRONMENTS =
+  "equation\\*?|align\\*?|aligned|gather\\*?|matrix|pmatrix|bmatrix|vmatrix|cases|split";
 
 /**
- * Split on blank lines, but never inside a fenced code block — a fence can
- * legitimately contain blank lines, and splitting there destroys it.
+ * Split on blank lines, but never inside a fenced code block or display math block.
  */
 function splitBlocks(src: string): string[] {
   const lines = src.replace(/\r\n/g, "\n").split("\n");
   const blocks: string[] = [];
   let current: string[] = [];
   let inFence = false;
+  let inDisplayMath = false;
+
+  const mathStartRe = new RegExp(
+    `^\\s*(\\$\\$|\\\\{1,2}\\[|\\\\begin\\{(?:${MATH_ENVIRONMENTS})\\})`,
+  );
+  const mathEndRe = new RegExp(
+    `(\\$\\$|\\\\{1,2}\\]|\\\\end\\{(?:${MATH_ENVIRONMENTS})\\})\\s*$`,
+  );
 
   for (const line of lines) {
-    if (/^\s*```/.test(line)) inFence = !inFence;
-    if (!inFence && line.trim() === "") {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+    }
+
+    if (!inFence) {
+      if (mathStartRe.test(line)) {
+        const closesOnSameLine = mathEndRe.test(line);
+        if (!closesOnSameLine) inDisplayMath = true;
+      } else if (inDisplayMath && mathEndRe.test(line)) {
+        inDisplayMath = false;
+      }
+    }
+
+    if (!inFence && !inDisplayMath && line.trim() === "") {
       if (current.length) blocks.push(current.join("\n"));
       current = [];
       continue;
@@ -66,7 +89,26 @@ function parseTable(chunk: string): Block | null {
 
 function parseBlock(chunk: string): Block {
   const fence = chunk.match(/^```([\w-]*)[^\n]*\n([\s\S]*?)\n?```$/);
-  if (fence) return { kind: "code", lang: fence[1] || undefined, text: fence[2] };
+  if (fence) {
+    const lang = (fence[1] || "").toLowerCase();
+    if (lang === "latex" || lang === "math" || lang === "tex") {
+      return { kind: "display-math", text: fence[2].trim() };
+    }
+    return { kind: "code", lang: fence[1] || undefined, text: fence[2] };
+  }
+
+  // Check if chunk is purely a display math equation block
+  const trimmed = chunk.trim();
+  const displayMathMatch =
+    trimmed.match(/^\$\$([\s\S]+?)\$\$$/) ||
+    trimmed.match(/^\\{1,2}\[([\s\S]+?)\\{1,2}\]$/) ||
+    trimmed.match(
+      new RegExp(`^(\\\\begin\\{(?:${MATH_ENVIRONMENTS})\\}[\\s\\S]+?\\\\end\\{(?:${MATH_ENVIRONMENTS})\\})$`),
+    );
+
+  if (displayMathMatch) {
+    return { kind: "display-math", text: (displayMathMatch[1] || displayMathMatch[0]).trim() };
+  }
 
   const table = parseTable(chunk);
   if (table) return table;
@@ -96,7 +138,7 @@ function parseBlock(chunk: string): Block {
     return { kind: "ol", items: lines.map((l) => l.replace(/^\s*\d+[.)]\s+/, "")) };
   }
 
-  return { kind: "p", text: chunk.replace(/\n/g, " ") };
+  return { kind: "p", text: chunk };
 }
 
 /* ------------------------------------------------------------------ */
@@ -106,7 +148,7 @@ function parseBlock(chunk: string): Block {
 function Tex({ tex, display }: { tex: string; display: boolean }) {
   let html: string;
   try {
-    html = katex.renderToString(tex, {
+    html = katex.renderToString(tex.trim(), {
       displayMode: display,
       throwOnError: false,
       trust: false, // keeps \href, \url, \includegraphics disabled
@@ -135,7 +177,16 @@ type Segment =
 
 /** Splits text into alternating plain / math segments. */
 function splitMath(text: string): Segment[] {
-  const re: RegExp = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  // 1: $$...$$ (display)
+  // 2: \[...\] or \\[...\\] (display)
+  // 3: \begin{...}...\end{...} (display)
+  // 4: \(...\) or \\(...\\) (inline)
+  // 5: $...$ (inline, strictly avoiding currency like $10 ... $2)
+  const re = new RegExp(
+    `\\$\\$([\\s\\S]+?)\\$\\$|\\\\{1,2}\\[([\\s\\S]+?)\\\\{1,2}\\]|(\\\\begin\\{(?:${MATH_ENVIRONMENTS})\\}[\\s\\S]+?\\\\end\\{(?:${MATH_ENVIRONMENTS})\\})|\\\\{1,2}\\(([\\s\\S]+?)\\\\{1,2}\\)|(?<!\\\\)\\$(?!\\s)((?:[^\\$\\\\\\\\n]|\\\\.)+?)(?<!\\s)(?<!\\\\)\\$(?!\\d)`,
+    "g",
+  );
+
   const out: Segment[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
@@ -144,11 +195,9 @@ function splitMath(text: string): Segment[] {
     if (m.index > last) {
       out.push({ type: "text", text: text.slice(last, m.index) });
     }
-    if (m[1] !== undefined) {
-      out.push({ type: "math", math: m[1], display: true });
-    } else {
-      out.push({ type: "math", math: m[2], display: false });
-    }
+    const isDisplay = Boolean(m[1] || m[2] || m[3]);
+    const mathContent = (m[1] || m[2] || m[3] || m[4] || m[5] || "").trim();
+    out.push({ type: "math", math: mathContent, display: isDisplay });
     last = m.index + m[0].length;
   }
 
@@ -206,7 +255,9 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
     if (seg.type === "math") {
       out.push(<Tex key={key} tex={seg.math} display={seg.display} />);
     } else {
-      out.push(...inlineText(seg.text, key));
+      // In text segments, normalize single newlines to spaces so prose flows naturally
+      const normalizedText = seg.text.replace(/\r\n/g, "\n").replace(/\n/g, " ");
+      out.push(...inlineText(normalizedText, key));
     }
   });
 
@@ -227,6 +278,12 @@ export function Markdown({ text }: { text: string }) {
         const key = `b${bi}`;
 
         switch (block.kind) {
+          case "display-math":
+            return (
+              <div key={key} className="tex-block">
+                <Tex tex={block.text} display={true} />
+              </div>
+            );
           case "h": {
             const Tag = `h${block.level}` as const;
             return <Tag key={key}>{inline(block.text, key)}</Tag>;
@@ -291,7 +348,19 @@ export function toPlainText(md: string): string {
   return md
     .replace(/```[\s\S]*?```/g, " [code] ")
     .replace(/\$\$[\s\S]+?\$\$/g, " [formula] ")
-    .replace(/\$[^$\n]+?\$/g, (m) => m.slice(1, -1))
+    .replace(/\\{1,2}\[[\s\S]+?\\{1,2}\]/g, " [formula] ")
+    .replace(
+      new RegExp(
+        `\\\\begin\\{(?:${MATH_ENVIRONMENTS})\\}[\\s\\S]+?\\\\end\\{(?:${MATH_ENVIRONMENTS})\\}`,
+        "g",
+      ),
+      " [formula] ",
+    )
+    .replace(/\\{1,2}\(([\s\S]+?)\\{1,2}\)/g, "$1")
+    .replace(
+      /(?<!\\)\$(?!\s)((?:[^\$\\\n]|\\.)+?)(?<!\s)(?<!\\)\$(?!\d)/g,
+      "$1",
+    )
     .replace(/[#>*_`]/g, "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/\s+/g, " ")

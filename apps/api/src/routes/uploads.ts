@@ -7,22 +7,36 @@ import {
 } from "@recallai/shared-types";
 import type { Repository } from "../db/repository.js";
 import { config } from "../config.js";
-import { extractText, removeFile, saveFile } from "../services/files.js";
+import { extname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { ensureDir, extractText, removeFile } from "../services/files.js";
 import { asyncRoute, HttpError, param } from "./helpers.js";
 
 /**
  * Uploads.
  *
  * The browser validates first for fast feedback; this validates again because
- * the browser is not a security boundary. Files land on disk with a generated
+ * the browser is not a security boundary. Files stream directly to disk with a generated
  * name — the original name is metadata only, never a path segment.
  */
 export function uploadsRouter(repo: Repository): Router {
   const r = Router();
 
+  const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      ensureDir(config.uploadDir)
+        .then(() => cb(null, config.uploadDir))
+        .catch((err: unknown) => cb(err instanceof Error ? err : new Error(String(err)), config.uploadDir));
+    },
+    filename: (_req, file, cb) => {
+      const safeExt = extname(file.originalname).toLowerCase().slice(0, 12);
+      cb(null, `${randomUUID()}${safeExt}`);
+    },
+  });
+
   const upload = multer({
     limits: { fileSize: config.maxUploadBytes, files: MAX_ATTACHMENTS_PER_MESSAGE },
-    storage: multer.memoryStorage(),
+    storage,
     fileFilter: (_req, file, cb) => {
       const name = file.originalname.toLowerCase();
       const spec = ALLOWED_UPLOAD_TYPES.find((t) =>
@@ -64,7 +78,7 @@ export function uploadsRouter(repo: Repository): Router {
       const name = file.originalname.toLowerCase();
       const spec = ALLOWED_UPLOAD_TYPES.find((t) => t.extensions.some((e) => name.endsWith(e)))!;
 
-      const stored = await saveFile(config.uploadDir, file.originalname, file.buffer);
+      const storedPath = file.path;
 
       const record = await repo.createAttachment({
         conversationId: typeof req.body?.conversationId === "string" ? req.body.conversationId : undefined,
@@ -73,7 +87,7 @@ export function uploadsRouter(repo: Repository): Router {
         size: file.size,
         kind: spec.kind,
         status: "processing",
-        storagePath: stored.path,
+        storagePath: storedPath,
       });
 
       res.status(201).json({ ...record, status: "processing" } satisfies Attachment);
@@ -82,7 +96,7 @@ export function uploadsRouter(repo: Repository): Router {
       // "processing" and will pick up `ready` when the message is sent.
       void (async () => {
         try {
-          const result = await extractText(stored.path, file.mimetype || "");
+          const result = await extractText(storedPath, file.mimetype || "");
           if (result.ok) {
             await repo.updateAttachment(record.id!, {
               status: "ready",
@@ -104,7 +118,7 @@ export function uploadsRouter(repo: Repository): Router {
             status: "failed",
             error: err instanceof Error ? err.message : "Processing failed.",
           });
-          await removeFile(stored.path);
+          await removeFile(storedPath);
         }
       })();
     }),

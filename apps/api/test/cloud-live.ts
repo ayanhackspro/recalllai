@@ -34,7 +34,23 @@ async function run() {
   console.log("Retrieved count:", lalgResult.items.length);
   console.log("Explanation Note:", lalgResult.note);
 
-  for (const item of lalgResult.items) {
+  // 3. Personal context / study code test
+  const codeQuery = "What is my study code?";
+  console.log(`\nQuery: "${codeQuery}"`);
+  const codeResult = await retrieveMemories(repo, codeQuery, 4, falkorContext);
+  console.log("Retrieved count:", codeResult.items.length);
+  console.log("Explanation Note:", codeResult.note);
+  for (const item of codeResult.items) {
+    console.log(` - [${item.type}] ${item.label}: ${item.summary}`);
+  }
+
+  // 4. Broad continuity test for new chats
+  const continuityQuery = "Where should I pick up next?";
+  console.log(`\nQuery: "${continuityQuery}"`);
+  const continuityResult = await retrieveMemories(repo, continuityQuery, 4, falkorContext);
+  console.log("Retrieved count:", continuityResult.items.length);
+  console.log("Explanation Note:", continuityResult.note);
+  for (const item of continuityResult.items) {
     console.log(` - [${item.type}] ${item.label}: ${item.summary}`);
   }
 
