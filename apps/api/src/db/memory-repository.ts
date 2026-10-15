@@ -286,10 +286,14 @@ export class MemoryRepository implements Repository {
   async upsertMemory(
     value: NewMemory,
   ): Promise<StudyMemory> {
-    const existing = [...this.memories.values()].find(
-      (m) => m.type === value.type && m.summary === value.summary,
+    const existing = [...this.memories.values()].find((m) =>
+      value.type === "study_session" && value.conversationId
+        ? m.type === "study_session" && m.conversationId === value.conversationId
+        : m.type === value.type && m.summary === value.summary,
     );
     if (existing) {
+      existing.label = value.label;
+      existing.summary = value.summary;
       existing.keywords = [...new Set([...existing.keywords, ...value.keywords])];
       existing.updatedAt = nowIso();
       existing.conversationId = value.conversationId ?? existing.conversationId;

@@ -402,6 +402,12 @@ export class FalkorContextService {
              MERGE (m)-[:TARGETS_GOAL]->(t)`,
             { params: { memoryId: memory.id, topicName } },
           );
+        } else if (memory.type === "study_session") {
+          await this.graph.query(
+            `MATCH (m:Memory {id: $memoryId}), (t:Topic {name: $topicName})
+             MERGE (m)-[:RECENTLY_STUDIED]->(t)`,
+            { params: { memoryId: memory.id, topicName } },
+          );
         }
       }
     } catch (err) {
@@ -559,13 +565,13 @@ export class FalkorContextService {
         if (isBroadOrContinuity) {
           const fallbackRes = await this.graph.query<GraphRow>(
             `MATCH (m:Memory)
-             OPTIONAL MATCH (m)-[r:RELATES_TO|TARGETS_GOAL|RECURRING_MISTAKE_IN]->(t:Topic)
+             OPTIONAL MATCH (m)-[r:RELATES_TO|TARGETS_GOAL|RECURRING_MISTAKE_IN|RECENTLY_STUDIED]->(t:Topic)
              WITH m, collect(coalesce(t.name, '')) AS topicNames, collect(type(r)) AS relTypes
              RETURN m.id AS id, m.type AS type, m.label AS label, m.summary AS summary,
                     m.source AS source, m.updatedAt AS updatedAt,
                     coalesce(head(topicNames), 'Your study history') AS topicName,
                     coalesce(head(relTypes), 'RELATES_TO') AS relType, 1 AS distance, '' AS edgeReason
-             ORDER BY CASE m.type WHEN 'goal' THEN 1 WHEN 'mistake' THEN 2 ELSE 3 END, m.updatedAt DESC
+             ORDER BY CASE m.type WHEN 'study_session' THEN 1 WHEN 'topic' THEN 2 WHEN 'goal' THEN 3 WHEN 'mistake' THEN 4 ELSE 5 END, m.updatedAt DESC
              LIMIT $limit`,
             { params: { limit } },
           );
@@ -573,7 +579,9 @@ export class FalkorContextService {
           for (const row of fallbackRes.data ?? []) {
             if (!candidates.has(row.id)) {
               candidates.set(row.id, row);
-              if (row.type === "goal") {
+              if (row.type === "study_session") {
+                explanationNotes.push(`Picked up from your recent study session on ${row.topicName}.`);
+              } else if (row.type === "goal") {
                 explanationNotes.push(`Anchored in your recorded study goal.`);
               } else if (row.type === "mistake") {
                 explanationNotes.push(`Kept your recurring mistake in mind.`);

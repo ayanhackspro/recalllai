@@ -48,10 +48,47 @@ export function contextRouter(repo: Repository): Router {
         globalMemories = await repo.listMemories();
       }
 
+      // Check if there is a previous active conversation to inject as recent study session
+      const allConvs = await repo.listConversations();
+      const prevConv = allConvs.find(
+        (c) => c.id !== conv.id && c.title !== "New conversation",
+      );
+      if (prevConv) {
+        const prevMessages = await repo.listMessages(prevConv.id);
+        const lastUser = prevMessages.filter((m) => m.role === "user").pop();
+        const topicOrQuestion = lastUser?.content || prevConv.preview || prevConv.title;
+        const exists = globalMemories.some(
+          (m) =>
+            m.type === "study_session" &&
+            (m.summary.includes(prevConv.title) || m.summary.includes(topicOrQuestion.slice(0, 20))),
+        );
+        if (!exists) {
+          globalMemories.unshift({
+            id: `prev-${prevConv.id}`,
+            type: "study_session",
+            label: "Recent study session",
+            summary: `In your previous session ("${prevConv.title}"), you were working on: ${topicOrQuestion.slice(0, 100)}`,
+            source: "learned",
+            updatedAt: prevConv.updatedAt,
+          });
+        }
+      }
+
+      // Sort with study_session and topic first
+      globalMemories.sort((a, b) => {
+        const weight = (t: string) =>
+          t === "study_session" ? 1 : t === "topic" ? 2 : t === "goal" ? 3 : t === "mistake" ? 4 : 5;
+        const diff = weight(a.type) - weight(b.type);
+        if (diff !== 0) return diff;
+        return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+      });
+
       if (globalMemories.length > 0) {
         res.json({
           items: globalMemories.slice(0, 4),
-          note: "Active study context remembered across your sessions.",
+          note: prevConv
+            ? `Picked up from your previous session on "${prevConv.title}".`
+            : "Active study context remembered across your sessions.",
           loading: false,
         } satisfies StudyContext);
         return;

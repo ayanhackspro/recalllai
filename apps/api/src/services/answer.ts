@@ -15,6 +15,14 @@ import { config } from "../config.js";
  * Nothing in here runs in the browser, and no provider key ever leaves the
  * server process.
  */
+export interface PreviousSessionInfo {
+  conversationId: string;
+  title: string;
+  lastTopicOrQuestion: string;
+  lastAssistantSummary?: string;
+  updatedAt?: string;
+}
+
 export interface AnswerRequest {
   content: string;
   responseMode: ResponseMode;
@@ -25,6 +33,8 @@ export interface AnswerRequest {
   memories: StudyMemory[];
   /** Prior conversation turns for multi-turn contextual continuity. */
   history?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** Recent prior study session for cross-chat continuity. */
+  previousSession?: PreviousSessionInfo;
 }
 
 export interface AnswerChunk {
@@ -45,7 +55,34 @@ export class LocalAnswerProvider implements AnswerProvider {
   readonly name = "local";
 
   async *stream(req: AnswerRequest, signal: AbortSignal) {
-    const { content, responseMode, memories, readyAttachments } = req;
+    const { content, responseMode, memories, readyAttachments, previousSession } = req;
+    const isContinuityPrompt =
+      /\b(?:where\s+(?:was\s+i|i\s+was|did\s+i\s+leave\s+off|did\s+we\s+stop|am\s+i|we\s+at)|what\s+(?:was\s+i\s+doing|were\s+we\s+(?:talking\s+about|discussing|working\s+on)|did\s+we\s+discuss|did\s+i\s+study\s+last|did\s+we\s+do)|catch\s+me\s+up|pick\s+up|continue\s+from\s+last|remind\s+me\s+what\s+(?:we|i))\b/i.test(
+        content.trim(),
+      );
+
+    if (isContinuityPrompt && previousSession) {
+      const summaryText = [
+        `In your previous study session (**${previousSession.title}**), you were working on:`,
+        ``,
+        `> "${previousSession.lastTopicOrQuestion}"`,
+        ``,
+        `### Where we left off`,
+        previousSession.lastAssistantSummary
+          ? `We discussed:\n\n${previousSession.lastAssistantSummary}`
+          : `You were exploring this topic and working through key principles.`,
+        ``,
+        `### Suggested next step`,
+        `Would you like to continue building on **${previousSession.title}**, work through a practice problem, or switch to a new concept?`,
+      ].join("\n");
+
+      for (const char of summaryText) {
+        if (signal.aborted) return;
+        yield char;
+      }
+      return;
+    }
+
     const topic =
       content.replace(/\s+/g, " ").trim().replace(/[.?!]+$/, "").slice(0, 110) ||
       "that";

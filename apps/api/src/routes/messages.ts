@@ -68,12 +68,77 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
 
     const { items, note } = await retrieveMemories(repo, body.content);
 
+    const isContinuityPrompt =
+      /\b(?:where\s+(?:was\s+i|i\s+was|did\s+i\s+leave\s+off|did\s+we\s+stop|am\s+i|we\s+at)|what\s+(?:was\s+i\s+doing|were\s+we\s+(?:talking\s+about|discussing|working\s+on)|did\s+we\s+discuss|did\s+i\s+study\s+last|did\s+we\s+do)|catch\s+me\s+up|pick\s+up|continue\s+from\s+last|remind\s+me\s+what\s+(?:we|i))\b/i.test(
+        body.content.trim(),
+      );
+
+    const allConvs = await repo.listConversations();
+    const prevConv = allConvs.find(
+      (c) => c.id !== conversationId && c.title !== "New conversation",
+    );
+    let previousSession: {
+      conversationId: string;
+      title: string;
+      lastTopicOrQuestion: string;
+      lastAssistantSummary?: string;
+      updatedAt?: string;
+    } | undefined;
+
+    if (prevConv) {
+      const prevMessages = await repo.listMessages(prevConv.id);
+      const lastUserMsg = prevMessages.filter((m) => m.role === "user").pop();
+      const lastAsstMsg = prevMessages
+        .filter((m) => m.role === "assistant" && m.status === "complete")
+        .pop();
+
+      if (lastUserMsg || prevConv.preview) {
+        previousSession = {
+          conversationId: prevConv.id,
+          title: prevConv.title,
+          lastTopicOrQuestion: lastUserMsg?.content || prevConv.preview || prevConv.title,
+          lastAssistantSummary: lastAsstMsg ? lastAsstMsg.content.slice(0, 300) : undefined,
+          updatedAt: prevConv.updatedAt,
+        };
+      }
+    }
+
+    let finalNote = note;
+    if (isContinuityPrompt && previousSession) {
+      const exists = items.some(
+        (m) =>
+          m.type === "study_session" &&
+          (m.summary.includes(previousSession!.title) ||
+            m.summary.includes(previousSession!.lastTopicOrQuestion.slice(0, 20))),
+      );
+      if (!exists) {
+        items.unshift({
+          id: `prev-${previousSession.conversationId}`,
+          type: "study_session",
+          label: "Recent study session",
+          summary: `In your previous session ("${previousSession.title}"), you were working on: ${previousSession.lastTopicOrQuestion.slice(0, 100)}`,
+          source: "learned",
+          updatedAt: previousSession.updatedAt,
+        });
+      }
+      finalNote = `Picked up from where you left off in your previous session ("${previousSession.title}").`;
+    }
+
     const allMessages = await repo.listMessages(conversationId);
     const history = allMessages
       .filter((m) => m.id !== userMessage.id && m.status === "complete")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-    return { conv, userMessage, attachments, readyAttachments, memories: items, note, history };
+    return {
+      conv,
+      userMessage,
+      attachments,
+      readyAttachments,
+      memories: items,
+      note: finalNote,
+      history,
+      previousSession,
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -106,6 +171,7 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
           readyAttachments: turn.readyAttachments as never,
           memories: turn.memories,
           history: turn.history,
+          previousSession: turn.previousSession,
         },
         new AbortController().signal,
       )) {
@@ -184,6 +250,7 @@ export function messagesRouter(repo: Repository, provider: AnswerProvider): Rout
           readyAttachments: turn.readyAttachments as never,
           memories: turn.memories,
           history: turn.history,
+          previousSession: turn.previousSession,
         },
         controller.signal,
       )) {

@@ -305,22 +305,26 @@ export class PgRepository implements Repository {
   async upsertMemory(
     value: NewMemory,
   ): Promise<StudyMemory> {
-    // Reuse an identical memory rather than accumulating duplicates.
-    const { rows: existing } = await this.pool.query<MemoryRow>(
-      `SELECT * FROM memories
-        WHERE type = $1 AND summary = $2
-        LIMIT 1`,
-      [value.type, value.summary],
-    );
+    let existingQuery = `SELECT * FROM memories WHERE type = $1 AND summary = $2 LIMIT 1`;
+    let existingParams: unknown[] = [value.type, value.summary];
+
+    if (value.type === "study_session" && value.conversationId) {
+      existingQuery = `SELECT * FROM memories WHERE type = 'study_session' AND conversation_id = $1 LIMIT 1`;
+      existingParams = [value.conversationId];
+    }
+
+    const { rows: existing } = await this.pool.query<MemoryRow>(existingQuery, existingParams);
     if (existing[0]) {
       const { rows } = await this.pool.query<MemoryRow>(
         `UPDATE memories
-            SET keywords = memories.keywords || $2::text[],
+            SET label = $2,
+                summary = $3,
+                keywords = $4::text[],
                 updated_at = now(),
-                conversation_id = COALESCE($3, conversation_id)
+                conversation_id = COALESCE($5, conversation_id)
           WHERE id = $1
         RETURNING *`,
-        [existing[0].id, value.keywords, value.conversationId ?? null],
+        [existing[0].id, value.label, value.summary, value.keywords, value.conversationId ?? null],
       );
       return toMemory(rows[0]!);
     }

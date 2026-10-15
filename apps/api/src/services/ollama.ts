@@ -228,6 +228,16 @@ export class OllamaAnswerProvider implements AnswerProvider {
       }
     }
 
+    if (req.previousSession) {
+      systemPrompt += `\n\n### Prior Session Context (Cross-Chat Continuity):\n`;
+      systemPrompt += `The student previously chatted in conversation: "${req.previousSession.title}".\n`;
+      systemPrompt += `In that session, they were working on: "${req.previousSession.lastTopicOrQuestion}".\n`;
+      if (req.previousSession.lastAssistantSummary) {
+        systemPrompt += `Discussion summary from that session:\n${req.previousSession.lastAssistantSummary}\n`;
+      }
+      systemPrompt += `CRITICAL INSTRUCTION FOR CONTINUITY: If the student asks "where was I", "where I was", "what was I doing", "what did we talk about", or asks to pick up / continue, directly answer based on this previous session. Tell them what they were studying and suggest the natural next pedagogical step.\n`;
+    }
+
     const messages: OllamaChatMessage[] = [
       { role: "system", content: systemPrompt },
     ];

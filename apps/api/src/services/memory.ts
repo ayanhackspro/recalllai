@@ -88,9 +88,16 @@ export async function retrieveMemories(
   if (isBroadOrContinuity) {
     const globalItems = await repo.listMemories();
     if (globalItems.length > 0) {
+      const sorted = [...globalItems].sort((a, b) => {
+        const weight = (t: string) =>
+          t === "study_session" ? 1 : t === "topic" ? 2 : t === "goal" ? 3 : t === "mistake" ? 4 : 5;
+        const diff = weight(a.type) - weight(b.type);
+        if (diff !== 0) return diff;
+        return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+      });
       return {
-        items: globalItems.slice(0, limit),
-        note: "Anchored in your ongoing study goals and recorded notes.",
+        items: sorted.slice(0, limit),
+        note: "Anchored in your ongoing study goals and recent sessions.",
       };
     }
   }
@@ -205,6 +212,50 @@ export async function maybeRecordMemory(
           conversationId: input.conversationId,
           messageId: input.messageId,
           keywords: keywordsOf(subject),
+        });
+      }
+
+      return memory;
+    }
+  }
+
+  // 4. Automatic Study Session & Topic tracking for regular queries
+  // When a student asks questions or studies a concept, record/update the session topic
+  const isMetaOrGreeting =
+    /^(hi|hello|hey|where\s+(?:was|am|i)|what\s+(?:was|did|is\s+my|are\s+my)|ok|okay|thanks|thank\s+you|bye|clear|test)\b/i.test(
+      text.trim(),
+    );
+
+  if (!isMetaOrGreeting && text.trim().length >= 8) {
+    const extracted = falkor.extractTopics(text);
+    let topicName = extracted.topics[0];
+    const cleanKeywords = keywordsOf(text);
+
+    if (!topicName && cleanKeywords.length > 0) {
+      topicName = cleanKeywords
+        .slice(0, 3)
+        .map((k) => k.charAt(0).toUpperCase() + k.slice(1))
+        .join(" ");
+    }
+
+    if (topicName) {
+      const snippet = text.trim().slice(0, 85).replace(/\s+/g, " ");
+      const memory = await repo.upsertMemory({
+        type: "study_session",
+        label: "Recent study session",
+        summary: `Studied ${topicName}: "${snippet}${text.trim().length > 85 ? "…" : ""}"`,
+        source: "learned",
+        conversationId: input.conversationId,
+        messageId: input.messageId,
+        keywords: [...new Set([topicName.toLowerCase(), ...cleanKeywords])],
+      });
+
+      if (falkor.isConnected) {
+        await falkor.upsertMemory(memory, {
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          topics: [topicName],
+          keywords: cleanKeywords,
         });
       }
 

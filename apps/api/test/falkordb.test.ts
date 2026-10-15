@@ -83,7 +83,13 @@ async function runTests() {
   const continuity = await retrieveMemories(repo, "Where should I pick up next?", 4, falkor);
   console.log("Continuity retrieved:", continuity);
   assert.ok(continuity.items.length > 0, "Should retrieve active memories for broad continuity query");
-  assert.ok(continuity.note?.includes("study goals and recorded notes"));
+  assert.ok(continuity.note?.includes("study goals"));
+
+  // 6. Test "where i was" query
+  console.log("--- Testing 'where i was' Continuity ---");
+  const whereIWas = await retrieveMemories(repo, "where i was", 4, falkor);
+  console.log("'where i was' retrieved:", whereIWas);
+  assert.ok(whereIWas.items.length > 0, "Should retrieve active session context for 'where i was'");
 
   console.log("\n All FalkorDB context service checks passed successfully!");
 }
